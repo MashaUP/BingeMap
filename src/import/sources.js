@@ -10,7 +10,7 @@ import { hash, toNumber, toYear, toDate, splitList, uniq } from '../common/util.
 
 export const SOURCES = {
   csv: 'CSV', json: 'JSON', xlsx: 'Excel', imdb: 'IMDb', trakt: 'Trakt', refract: 'Refract', simkl: 'SIMKL',
-  tvtime: 'TV Time', showly: 'Showly', seriesguide: 'SeriesGuide', sofa: 'Sofa Time', manual: 'Lista manuale',
+  tvtime: 'TV Time', showly: 'Showly', seriesguide: 'SeriesGuide', sofa: 'Sofa Time', manual: 'Lista manuale', netflix: 'Netflix', paste: 'Lista incollata', anilist: 'AniList', mal: 'MyAnimeList',
 };
 
 const SYN = {
@@ -100,6 +100,9 @@ export function mergeRows(rows) {
   return [...m.values()];
 }
 
+export function mergeRowsPublic(rows) { return mergeRows(rows); }
+export function finalizeRow(source, r) { return finalize(source, r); }
+
 function finalize(source, r) {
   const pt = parseTitle(r.title);
   const out = {
@@ -108,7 +111,7 @@ function finalize(source, r) {
     originalTitle: r.originalTitle || null,
     altTitles: r.altTitles || [],
     year: r.year ?? pt.year ?? null,
-    ids: { tmdb: normId(r.ids?.tmdb), imdb: normImdb(r.ids?.imdb), tvdb: normId(r.ids?.tvdb), simkl: normId(r.ids?.simkl), trakt: normId(r.ids?.trakt) },
+    ids: { tmdb: normId(r.ids?.tmdb), imdb: normImdb(r.ids?.imdb), tvdb: normId(r.ids?.tvdb), simkl: normId(r.ids?.simkl), trakt: normId(r.ids?.trakt), anilist: normId(r.ids?.anilist), mal: normId(r.ids?.mal) },
     mediaType: r.mediaType || 'unknown',
     rawStatus: r.rawStatus ?? null,
     status: r.status || mapStatus(r.rawStatus),
@@ -287,8 +290,10 @@ export async function parseFiles(files, source) {
           }
         }
       } else if (/\.csv$/i.test(name)) {
-        const { headers, records } = parseCsv(await f.text());
-        if (source === 'imdb' || headers.map(key).includes('const')) { rows.push(...parseImdb(await f.text(), name).rows); continue; }
+        const text = await f.text();
+        const { headers, records } = parseCsv(text);
+        if (source === 'imdb' || headers.map(key).includes('const')) { rows.push(...parseImdb(text, name).rows); continue; }
+        if (source === 'netflix' || isNetflixCsv(headers)) { const r = parseNetflix(text); rows.push(...r.rows); continue; }
         const mapping = suggestMapping(headers);
         if (!mapping.title) { notes.push(`${name}: nessuna colonna titolo`); continue; }
         rows.push(...rowsFromRecords(records, mapping, source, { defaultStatus: ctx.defaultStatus, listName: ctx.listName, defaultType: ctx.mediaType }));
@@ -337,3 +342,94 @@ export function fromSimkl(json) {
 }
 
 export { parseCsv, parseXlsx, readZip };
+
+// --- Netflix (funzione 9): «Attività di visualizzazione» › Scarica tutto (NetflixViewingHistory.csv, colonne Title, Date)
+// oppure il file ViewingActivity.csv della richiesta completa dei dati (Profile Name, Start Time, Duration, Title, Supplemental Video Type…).
+// Il titolo è «Serie: Stagione 1: Nome episodio» nella lingua del profilo.
+const SEASON_RE = /^(?:stagione|season|temporada|saison|staffel|seizoen|sezon|parte|part|partie|teil|volume|vol\.?|libro|book|chapter|capitolo\s+\d+\s*-?\s*stagione)\s*(\d{1,3}|[ivxl]{1,6})$/i;
+const LIMITED_RE = /^(?:miniserie|serie limitata|limited series|miniseries|mini-serie|serie|collection|collezione|sezione)$/i;
+const ROMAN_N = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
+
+export function splitNetflixTitle(raw) {
+  const parts = String(raw || '').split(': ').map((x) => x.trim());
+  for (let i = 1; i < parts.length; i++) {
+    const m = parts[i].match(SEASON_RE);
+    if (m) {
+      const n = /^\d+$/.test(m[1]) ? Number(m[1]) : ROMAN_N[m[1].toLowerCase()] || 1;
+      return { show: parts.slice(0, i).join(': '), season: n, episode: parts.slice(i + 1).join(': ') || null, marker: true };
+    }
+    if (LIMITED_RE.test(parts[i]) && i < parts.length - 1) return { show: parts.slice(0, i).join(': '), season: 1, episode: parts.slice(i + 1).join(': '), marker: true };
+  }
+  if (parts.length >= 3) return { show: parts[0], season: null, episode: parts.slice(1).join(': '), marker: false };
+  if (parts.length === 2) return { show: parts[0], season: null, episode: parts[1], marker: false, weak: true };
+  return { show: parts[0], season: null, episode: null, marker: false, movie: true };
+}
+
+// Date di Netflix: «15/01/24» (Italia), «1/15/24» (USA), «2024-01-15 21:03:11».
+export function netflixDates(values) {
+  let dayFirst = null;
+  for (const v of values) {
+    const m = String(v).match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/);
+    if (!m) continue;
+    if (Number(m[1]) > 12) { dayFirst = true; break; }
+    if (Number(m[2]) > 12) { dayFirst = false; break; }
+  }
+  if (dayFirst == null) dayFirst = true;
+  return (v) => {
+    const s = String(v || '').trim();
+    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (iso) return Date.UTC(+iso[1], +iso[2] - 1, +iso[3], +(iso[4] || 12), +(iso[5] || 0));
+    const m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/);
+    if (!m) return null;
+    const [d, mo] = dayFirst ? [+m[1], +m[2]] : [+m[2], +m[1]];
+    const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+    return new Date(y, mo - 1, d, 12).getTime();
+  };
+}
+
+export function parseNetflix(text, { profile = null, now = Date.now() } = {}) {
+  const { headers, records } = parseCsv(text);
+  const hk = headers.map(key);
+  const col = (...names) => headers[hk.findIndex((h) => names.includes(h))];
+  const cTitle = col('title', 'titolo'); const cDate = col('date', 'data', 'starttime');
+  const cProfile = col('profilename'); const cSupp = col('supplementalvideotype'); const cDur = col('duration');
+  if (!cTitle) return { rows: [], skippedMovies: 0, notes: ['Nessuna colonna Title: non sembra un file di Netflix'], profiles: [] };
+  const profiles = cProfile ? [...new Set(records.map((r) => r[cProfile]).filter(Boolean))] : [];
+  const toTs = netflixDates(records.slice(0, 200).map((r) => r[cDate]));
+  const recs = records.filter((r) => (!profile || !cProfile || r[cProfile] === profile) && !(cSupp && r[cSupp]) && r[cTitle]);
+  // Prefissi «Serie: X» che compaiono con almeno due suffissi diversi: sono serie anche senza la parola «Stagione».
+  const prefixCount = new Map();
+  for (const r of recs) { const p = splitNetflixTitle(r[cTitle]); if (p.weak) { const k = p.show; if (!prefixCount.has(k)) prefixCount.set(k, new Set()); prefixCount.get(k).add(p.episode); } }
+  const shows = new Map(); let movies = 0;
+  for (const r of recs) {
+    const p = splitNetflixTitle(r[cTitle]);
+    if (p.movie || (p.weak && (prefixCount.get(p.show)?.size || 0) < 2)) { movies++; continue; }
+    if (cDur && /^0?0:0[0-2]:/.test(r[cDur] || '')) continue; // meno di 3 minuti: anteprima o clic per sbaglio
+    const ts = toTs(r[cDate]);
+    if (!shows.has(p.show)) shows.set(p.show, { eps: new Set(), seasons: new Set(), last: 0, lastEp: null, lastSeason: null, first: Infinity });
+    const sh = shows.get(p.show);
+    sh.eps.add(`${p.season ?? 0}|${p.episode}`);
+    if (p.season != null) sh.seasons.add(p.season);
+    if (ts && ts >= sh.last) { sh.last = ts; sh.lastEp = p.episode; sh.lastSeason = p.season; }
+    if (ts) sh.first = Math.min(sh.first, ts);
+  }
+  const rows = [...shows.entries()].map(([show, sh]) => finalize('netflix', {
+    title: show, mediaType: 'tv',
+    rawStatus: 'Netflix: visti ' + sh.eps.size + ' episodi',
+    status: sh.last && now - sh.last < 60 * 86400000 ? 'watching' : 'hold',
+    episodesWatched: sh.eps.size, seasonsWatched: sh.seasons.size ? Math.max(...sh.seasons) : null,
+    lastActivity: sh.last || null, lists: ['Netflix'], tags: [],
+    raw: { show, episodes: sh.eps.size, lastSeason: sh.lastSeason, lastEpisode: sh.lastEp, firstWatched: Number.isFinite(sh.first) ? sh.first : null, profile },
+  }));
+  return { rows: mergeRows(rows), skippedMovies: movies, notes: [], profiles };
+}
+
+export function isNetflixCsv(headers) {
+  const hk = headers.map(key);
+  return (hk.length === 2 && hk.includes('title') && hk.includes('date')) || (hk.includes('profilename') && hk.includes('supplementalvideotype'));
+}
+
+// Lista incollata (funzione 10): titoli estratti dal testo, stato scelto dall'utente, in una lista con nome.
+export function rowsFromPasted(items, { status = 'plan', listName = 'Lista incollata' } = {}) {
+  return mergeRows(items.map((it) => finalize('paste', { title: it.title, year: it.year, mediaType: 'tv', status, rawStatus: status, lists: [listName], tags: [] })));
+}

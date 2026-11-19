@@ -8,6 +8,7 @@ import { send, kv, originPattern } from '../platform/platform.js';
 import { setProfile, getAll, get } from '../db/db.js';
 import { fmtDate, fmtNum } from '../common/util.js';
 import { SOURCES } from '../import/sources.js';
+import { setLang, translateTree } from './i18n.js';
 
 const pop = document.getElementById('pop');
 const app = (hash = '') => chrome.tabs.create({ url: chrome.runtime.getURL('src/ui/app.html' + (hash ? '#' + hash : '')) });
@@ -16,6 +17,8 @@ async function main() {
   setProfile(await kv.get('activeProfile', 'default'));
   const [s, L, [tab]] = await Promise.all([loadSettings(), getLinks(), chrome.tabs.query({ active: true, currentWindow: true })]);
   document.documentElement.dataset.theme = s.theme === 'light' ? 'light' : 'dark';
+  setLang(s.lang);
+  document.documentElement.dataset.contrast = s.contrast === 'high' ? 'high' : 'normal';
   const url = tab?.url || '';
   let origin = null; try { const u = new URL(url); if (/^https?:$/.test(u.protocol)) origin = u.origin; } catch { /* pagina interna */ }
   const onSite = origin && s.sc.origin === origin;
@@ -53,10 +56,12 @@ async function main() {
         <div class="between"><span class="muted">Le prossime 5</span><span style="text-align:right">${nextNames.length ? e(nextNames.slice(0, 2).join(', ')) + (nextNames.length > 2 ? ` +${nextNames.length - 2}` : '') : '—'}</span></div>
       </div>
       <button class="btn" data-scan ${s.sc.origin && !job ? '' : 'disabled'}>${icon('refresh', 16)}Aggiorna il catalogo</button>
+      <div class="row" style="gap:6px"><button class="btn sm" style="flex:1" data-go="/stasera?min=40">${icon('clock', 14)}Ho 40 minuti</button><button class="btn sm" style="flex:1" data-go="/calendario">${icon('calendar', 14)}In arrivo</button></div>
     </section>
     <footer><button class="btn sm" style="flex:1" data-update>${icon('refresh', 14)}Cerca aggiornamento</button><a class="ibtn" href="${e(L.kofi)}" target="_blank" rel="noopener" aria-label="Ko-fi">${icon('heart', 16)}</a><a class="ibtn" href="${e(L.discord)}" target="_blank" rel="noopener" aria-label="Discord">${icon('chat', 16)}</a></footer>`;
 
   cur = { tab, url, origin };
+  translateTree(pop);
 }
 
 let cur = {};
@@ -64,6 +69,7 @@ pop.addEventListener('click', async (ev) => {
     const { tab, url, origin } = cur;
     const b = ev.target.closest('button'); if (!b) return;
     if (b.hasAttribute('data-open')) return app('/scopri');
+    if (b.dataset.go) return app(b.dataset.go);
     if (b.dataset.detail) return app('/serie/' + encodeURIComponent(b.dataset.detail));
     if (b.hasAttribute('data-scan')) { await send('scan.start', { kind: 'sc-list', mode: 'update' }); return app('/attivita'); }
     if (b.hasAttribute('data-update')) { const u = await checkUpdate(); b.textContent = u.error ? 'Controllo non riuscito' : u.available ? `Nuova versione ${u.latest}` : 'Sei aggiornato'; if (u.available) app('/impostazioni/info'); return; }

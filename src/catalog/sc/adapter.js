@@ -83,6 +83,26 @@ export function titleUrl(settings, id, slug) {
   return `${origin}${lang}${settings.sc.titlePath || '/titles'}/${id}${slug ? '-' + slug : ''}`;
 }
 
+function namesOf(v) {
+  if (!v) return [];
+  const arr = Array.isArray(v) ? v : String(v).split(',');
+  return arr.map((x) => (typeof x === 'string' ? x : x?.name || x?.title || x?.keyword)).filter(Boolean).map((x) => String(x).trim()).filter(Boolean);
+}
+
+function seasonsOf(raw) {
+  if (!Array.isArray(raw.seasons)) return [];
+  return raw.seasons.map((x) => ({ n: toNumber(x.number ?? x.season_number), episodes: toNumber(x.episodes_count ?? x.episode_count), date: x.release_date || null }))
+    .filter((x) => x.n != null && x.n > 0).sort((a, b) => a.n - b.n);
+}
+
+// ID dei servizi legali presenti nella scheda del sito: indicano dove la serie esiste in modo legale.
+export const PROVIDER_FIELDS = { netflix_id: 'Netflix', prime_id: 'Prime Video', disney_id: 'Disney+', now_id: 'NOW', apple_id: 'Apple TV+', paramount_id: 'Paramount+', hbo_id: 'HBO Max' };
+function providerIdsOf(raw) {
+  const out = [];
+  for (const [k, name] of Object.entries(PROVIDER_FIELDS)) if (raw[k] != null && raw[k] !== '' && raw[k] !== 0) out.push(name);
+  return out;
+}
+
 // Record del catalogo nel formato comune di BingeMap.
 export function normalizeTitle(raw, settings) {
   const id = raw.id;
@@ -100,7 +120,13 @@ export function normalizeTitle(raw, settings) {
     url: titleUrl(settings, id, raw.slug),
     recommendations: (raw.recommendations || raw.related || []).map((r) => (typeof r === 'object' ? r.id : r)).filter((x) => x != null),
     trailerUrl: raw.trailers?.[0]?.youtube_id ? `https://www.youtube.com/watch?v=${raw.trailers[0].youtube_id}` : (raw.trailerUrl || null),
+    seasonEpisodes: seasonsOf(raw), episodesCount: null,
+    keywords: namesOf(raw.keywords), cast: namesOf(raw.main_actors).slice(0, 8), creators: namesOf(raw.created_by || raw.main_directors).slice(0, 4),
+    dubIta: raw.dub_ita == null ? null : raw.dub_ita === true || raw.dub_ita === 1 || raw.dub_ita === '1',
+    originalLanguage: raw.original_language || null, siteStatus: raw.status || null,
+    providerIds: providerIdsOf(raw),
   };
+  rec.episodesCount = rec.seasonEpisodes.length ? rec.seasonEpisodes.reduce((a, x) => a + (x.episodes || 0), 0) || null : null;
   for (const k of Object.keys(rec)) if (rec[k] === undefined) rec[k] = null;
   return rec;
 }
@@ -109,22 +135,30 @@ export function normalizeTitle(raw, settings) {
 export function detailFields(raw, settings) {
   const r = normalizeTitle(raw, settings);
   const out = {};
-  for (const k of ['tmdbId', 'imdbId', 'genres', 'plot', 'duration', 'recommendations', 'trailerUrl', 'year', 'seasonsCount', 'originalName', 'poster']) {
+  for (const k of ['tmdbId', 'imdbId', 'genres', 'plot', 'duration', 'recommendations', 'trailerUrl', 'year', 'seasonsCount', 'originalName', 'poster',
+    'seasonEpisodes', 'episodesCount', 'keywords', 'cast', 'creators', 'dubIta', 'originalLanguage', 'siteStatus', 'providerIds']) {
     const v = r[k];
     if (v != null && !(Array.isArray(v) && !v.length)) out[k] = v;
   }
   return out;
 }
 
-// URL di una pagina dell'elenco (livello 1).
+// URL di una pagina dell'elenco (livello 1). n parte da 0.
+// api: elenco JSON paginato (sul sito reale /{lang}/archive con intestazioni XHR, vedi docs/SITE_NOTES.md).
 export function listUrl(settings, n, strategy) {
   const s = settings.sc;
-  const lang = s.lang ? `lang=${encodeURIComponent(s.lang)}&` : '';
-  const pageVal = s.pageParam === 'page' ? n + 1 : n * s.pageSize;
-  if (strategy === 'api') return `${s.origin}${s.apiPath}?${lang}${s.typeParam}&${s.pageParam}=${pageVal}`;
   const langPath = s.lang ? `/${s.lang}` : '';
+  const pageVal = s.pageParam === 'page' ? n + 1 : n * s.pageSize;
+  if (strategy === 'api') {
+    const path = String(s.apiPath || '/{lang}/archive').replace('/{lang}', langPath).replace('{lang}', s.lang || '');
+    const lang = s.lang ? `lang=${encodeURIComponent(s.lang)}&` : '';
+    return `${s.origin}${path}?${lang}${s.typeParam}&${s.pageParam}=${pageVal}`;
+  }
   return `${s.origin}${langPath}${s.archivePath}?${s.typeParam}&${s.pageParam}=${pageVal}`;
 }
+
+// Intestazioni con cui il sito restituisce il JSON invece dell'HTML (come fa la pagina stessa con «carica altri»).
+export const JSON_HEADERS = { 'X-Requested-With': 'XMLHttpRequest', accept: 'application/json' };
 
 // Interpreta la risposta di una pagina dell'elenco (JSON o HTML).
 export function parseList(body, contentType = '') {
@@ -137,13 +171,22 @@ export function parseList(body, contentType = '') {
   const arrays = findTitleArrays(data);
   arrays.sort((a, b) => b.length - a.length);
   const titles = arrays[0] || [];
-  return { ok: true, titles, total: findTotal(data) };
+  // Paginatore Laravel: current_page / last_page dicono quando l'elenco è finito.
+  const page = Number(data.current_page) || null;
+  const lastPage = Number(data.last_page) || null;
+  return { ok: true, titles, total: findTotal(data), page, lastPage };
 }
 
 export function parseDetail(body) {
   const data = /^\s*{/.test(body) ? (() => { try { return JSON.parse(body); } catch { return null; } })() : extractPageData(body);
   if (!data) return null;
-  return findSingleTitle(data) || findTitleArrays(data)[0]?.[0] || null;
+  const t = findSingleTitle(data) || findTitleArrays(data)[0]?.[0] || null;
+  if (!t) return null;
+  // Titoli correlati: sul sito reale stanno nello slider «related» della pagina, non dentro il titolo.
+  const sliders = data.props?.sliders || [];
+  const related = sliders.find((x) => /related|correlat|simil/i.test(x?.name || ''));
+  if (related?.titles?.length && !t.recommendations && !t.related) return { ...t, related: related.titles.map((r) => r.id).filter((x) => x != null) };
+  return t;
 }
 
 // Riconosce una pagina del catalogo dalla struttura, non dal dominio.

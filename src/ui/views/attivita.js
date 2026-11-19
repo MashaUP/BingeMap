@@ -9,6 +9,7 @@ import { syncNow } from '../../sync/drive.js';
 import { report } from '../../common/diag.js';
 import { fmtDate, fmtNum, daysBetween } from '../../common/util.js';
 import { KIND_LABEL } from '../../scan/scanner.js';
+import { imdbRatingsCsv, imdbWatchlistCsv, fullCsv, malXml, malEntries } from '../../backup/exports.js';
 
 const ST = { running: ['In corso', 's-watch'], paused: ['In pausa', 's-hold'], done: ['Completa', 's-match'], partial: ['Parziale', 's-unk'], stopped: ['Fermata', 's-hold'], blocked: ['Bloccata dal sito', 's-drop'], error: ['Errore', 's-drop'] };
 
@@ -44,6 +45,17 @@ export async function render(root, _p, ctx) {
     <p class="muted" style="margin:0">Una persona fa la scansione e condivide un file con i soli dati del catalogo, senza nulla di personale. Chi lo importa evita la prima scansione. Pensato per pochi amici: non è un servizio pubblico.</p>
     <div class="row"><button class="btn" data-pkg="sc">Esporta catalogo Streaming Community</button><button class="btn" data-pkg="tmdbp">Esporta catalogo legale</button><button class="btn" data-pkg-in>${icon('upload', 16)}Importa un pacchetto</button></div>
   </section>
+  <section class="panel col" data-exports>
+    <h2>Esporta verso altre app</h2>
+    <p class="muted" style="margin:0">Le tue liste in formati che altre app sanno importare, così non resti legato a BingeMap. Le serie senza ID IMDb non entrano nei file IMDb: per quelle usa il CSV completo.</p>
+    <div class="row">
+      <button class="btn" data-exp="imdb-ratings">${icon('download', 16)}Voti e viste (CSV formato IMDb)</button>
+      <button class="btn" data-exp="imdb-watchlist">${icon('download', 16)}Da vedere (watchlist formato IMDb)</button>
+      <button class="btn" data-exp="full">${icon('download', 16)}CSV completo (ID TMDB/IMDb, stato, voto, progresso, tag)</button>
+      <button class="btn" data-exp="mal">${icon('download', 16)}Anime (XML MyAnimeList)</button>
+    </div>
+    <p class="muted small" style="margin:0">Il formato IMDb lo importano tra gli altri Trakt e SIMKL; l'XML MyAnimeList lo importano MyAnimeList, AniList e Kitsu.</p>
+  </section>
   <section class="panel col">
     <div class="between"><h2>Sincronizzazione Google Drive</h2><span class="muted small">Ultima: ${lastSync ? fmtDate(lastSync, true) : 'mai'}</span></div>
     <p class="muted" style="margin:0">I dati vanno in una cartella nascosta del tuo Drive, visibile solo a BingeMap. Nessun server di BingeMap.</p>
@@ -71,6 +83,21 @@ export async function render(root, _p, ctx) {
 
   root.addEventListener('click', async (ev) => {
     const b = ev.target.closest('button'); if (!b) return;
+    if (b.dataset.exp) {
+      const views = await ctx.store.allViews();
+      const k = b.dataset.exp;
+      if (k === 'imdb-ratings') { const c = imdbRatingsCsv(views); download(downloadName('bingemap-imdb-voti', 'csv'), c, 'text/csv'); toast('File esportato', 'ok'); }
+      if (k === 'imdb-watchlist') { const c = imdbWatchlistCsv(views); download(downloadName('bingemap-imdb-watchlist', 'csv'), c, 'text/csv'); toast('File esportato', 'ok'); }
+      if (k === 'full') { download(downloadName('bingemap-liste', 'csv'), fullCsv(views), 'text/csv'); toast('CSV esportato', 'ok'); }
+      if (k === 'mal') {
+        const items = await getAll('library_items');
+        const byItem = new Map(); for (const v of views) for (const key of v.linkedKeys || []) byItem.set(key, v);
+        const entries = malEntries(items, byItem);
+        if (!entries.length) { toast('Nessun anime con ID MyAnimeList: importa prima da AniList o MyAnimeList', 'err'); return; }
+        download(downloadName('bingemap-anime-mal', 'xml'), malXml(entries), 'application/xml'); toast(`${entries.length} anime esportati`, 'ok');
+      }
+      return;
+    }
     try {
       if (b.dataset.start) { const [kind, mode] = b.dataset.start.split('|'); const j = await send('scan.start', { kind, mode }); drawJob(j); toast('Operazione avviata', 'ok'); ctx.rerender(); }
       if (b.dataset.job) { const id = activeBox.dataset.id; await send(`scan.${b.dataset.job}`, { id }); if (b.dataset.job !== 'pause') setTimeout(() => ctx.rerender(), 600); }

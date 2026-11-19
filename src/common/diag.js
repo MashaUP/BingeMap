@@ -9,7 +9,8 @@ let counter = 0;
 function scrub(v) {
   if (v == null) return v;
   let s = String(v);
-  s = s.replace(/([?&](api_key|access_token|token|code|client_secret|key)=)[^&\s]+/gi, '$1***');
+  s = s.replace(/((?:^|[?&#\s,;])(api_key|access_token|refresh_token|token|code|code_verifier|client_secret|client_id|key)=)[^&\s,;]+/gi, '$1***');
+  s = s.replace(/ya29\.[A-Za-z0-9._-]+/g, '***');
   s = s.replace(/Bearer\s+[A-Za-z0-9._-]+/g, 'Bearer ***');
   s = s.replace(/eyJ[A-Za-z0-9._-]{20,}/g, '***');
   return s.slice(0, 400);

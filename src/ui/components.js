@@ -2,6 +2,7 @@
 import { escapeHtml as e, fmtDec } from '../common/util.js';
 import { icon } from './icons.js';
 import { STATUS_LABEL, STATUS_CLASS } from '../library/status.js';
+import { decodeFile } from '../import/csv.js';
 
 export { e };
 
@@ -34,6 +35,7 @@ export function card(v, opts = {}) {
     <div style="padding:0 4px 4px;display:flex;flex-direction:column;gap:4px">
       <div class="t ${hidden ? 'reveal' : ''}">${e(v.name)}</div>
       <div class="m">${e(meta)}</div>
+      ${v.progress?.pct != null && (v.status === 'watching' || v.status === 'hold') ? `<div class="prog sm" role="progressbar" aria-valuenow="${v.progress.pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso ${v.progress.pct}%" title="${v.progress.pos ? `S${v.progress.pos.s}E${v.progress.pos.e} · ` : ''}${v.progress.pct}%"><span style="width:${v.progress.pct}%"></span></div>` : ''}
       ${why}
       <div class="between" style="gap:6px"><div class="row" style="gap:4px">${tags}${v.subIta ? '<span class="tag">Sub-ITA</span>' : ''}</div>${stars(v.score)}</div>
     </div>
@@ -51,14 +53,19 @@ export function chip(label, { on = false, ex = false, act = '', data = {}, n = n
 }
 
 // --- Notifiche a comparsa
-export function toast(msg, kind = '') {
+export function toast(msg, kind = '', action = null) {
   let box = document.querySelector('.toasts');
   if (!box) { box = document.createElement('div'); box.className = 'toasts'; box.setAttribute('role', 'status'); document.body.appendChild(box); }
   const t = document.createElement('div');
   t.className = `toast ${kind}`;
-  t.textContent = msg;
+  const span = document.createElement('span'); span.textContent = msg; t.appendChild(span);
+  if (action) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm'; b.textContent = action.label;
+    b.addEventListener('click', () => { t.remove(); action.run(); });
+    t.appendChild(b);
+  }
   box.appendChild(t);
-  setTimeout(() => t.remove(), kind === 'err' ? 8000 : 4000);
+  setTimeout(() => t.remove(), kind === 'err' ? 8000 : action ? 6000 : 4000);
 }
 
 // --- Finestre
@@ -112,7 +119,7 @@ export function pickFiles({ accept = '', multiple = false } = {}) {
 }
 
 export function fileWrap(f) {
-  return { name: f.webkitRelativePath || f.name, text: () => f.text(), bytes: async () => new Uint8Array(await f.arrayBuffer()) };
+  return { name: f.webkitRelativePath || f.name, text: () => decodeFile(f), bytes: async () => new Uint8Array(await f.arrayBuffer()) };
 }
 
 export function busy(btn, on, label = null) {

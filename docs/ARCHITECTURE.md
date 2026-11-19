@@ -26,3 +26,26 @@ Tre strati mai mescolati: catalogo (`catalog_*`, `scan_*`, `tmdb_cache`), librer
 - Gli import sono una transazione unica con stato precedente salvato per l'annullamento.
 - Le regole manuali di match e lo strato personale vincono sempre e non vengono sovrascritti.
 - Sincronizzazione: vince il record con `updatedAt` più recente; cancellazioni tramite tombstones.
+
+## Aggiunte della 1.1.0
+
+- `src/library/progress.js` progresso per episodio · `src/library/alerts.js` calendario e rinnovi · `src/common/ics.js` esportazione `.ics` · `src/library/planner.js` maratona.
+- `src/recommend/map.js` mappa: TF-IDF dei tratti → k vicini con indice invertito → layout a forze deterministico → zone con k-means; calcolata nel worker e tenuta in cache.
+- `src/recommend/tonight.js` «Ho 40 minuti» · `src/library/wrapped.js` riepilogo annuale · `src/library/undo.js` annulla globale (ogni `setOverlay` salva il record precedente).
+- `src/import/paste.js` lista incollata · Netflix in `src/import/sources.js` · `decodeBytes` in `src/import/csv.js` (UTF-8, UTF-16, Windows-1252).
+- `src/library/search.js` ricerca veloce per menu del tasto destro e barra degli indirizzi (parola chiave `bm`).
+- `src/content/bridge.js` script nel mondo della pagina (solo sull'origine autorizzata) che passa i titoli al content script: sul sito reale Vue toglie `data-page` dal DOM.
+- `src/ui/i18n.js` interfaccia in inglese: dizionario applicato ai nodi di testo, con un osservatore per i contenuti aggiunti dopo.
+- Tra schede: ogni modifica manda `data.changed` al service worker, che avvisa le altre pagine; queste ricaricano i dati senza rimandare l'avviso.
+
+## Aggiunte della 1.2.0
+
+- `src/library/universes.js` universi (prefisso di franchise + stessi autori con legame forte, union-find) · `src/library/classics.js` voto pesato e copertura · `src/library/timeline.js` · `src/library/world.js` con `assets/world.json` (Natural Earth 1:110m già proiettato, generato una volta con world-atlas e d3-geo, nessuna dipendenza a runtime).
+- `src/import/anime.js` AniList (GraphQL pubblico, permesso di host chiesto al primo uso) e MyAnimeList (XML, anche gzip con `DecompressionStream`), anime della stagione.
+- `src/backup/exports.js` CSV formato IMDb (senza BOM), CSV completo, XML MyAnimeList.
+- Persone seguite in `settings.follows`; campi delle viste `openEnding`, `missingSeasons`, `followedPeople`, `anime`, `dubIta`.
+- Alto contrasto: `html[data-contrast=high]` ridefinisce le variabili; testo più grande con `zoom` sulla radice.
+
+## Test
+
+`npm test` (72 test di unità, fake-indexeddb) e `npm run e2e` (90 controlli in Chrome con l'estensione estratta dallo zip del pacchetto, sito simulato con la struttura reale, axe-core, confronto con le immagini in `tests/e2e/baseline/`, ripresa della scansione dopo la chiusura del browser).

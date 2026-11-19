@@ -41,17 +41,35 @@ export function mapTv(d, prev = null) {
     status: d.status || null, seasons: d.number_of_seasons ?? null, episodes: d.number_of_episodes ?? null, epRuntime,
     altTitles: [...new Set([...(d.alternative_titles?.results || []).map((a) => a.title), d.original_name].filter(Boolean))].slice(0, 20),
     tvdbId: d.external_ids?.tvdb_id || null, imdbId: d.external_ids?.imdb_id || null,
-    popularity: d.popularity ?? null, voteAverage: d.vote_average ?? null, posterPath: d.poster_path || null,
+    popularity: d.popularity ?? null, voteAverage: d.vote_average ?? null, voteCount: d.vote_count ?? null, posterPath: d.poster_path || null,
     recommendations: (d.recommendations?.results || []).slice(0, 20).map((r) => r.id),
     trailer: vid ? `https://www.youtube.com/watch?v=${vid.key}` : null,
     cast: (d.credits?.cast || []).slice(0, 8).map((c) => c.name),
     creators: (d.created_by || []).map((c) => c.name),
     statusHistory: statusHistory.slice(-10), endedAt, updatedAt: now,
+    inProduction: d.in_production ?? null,
+    nextEp: epOf(d.next_episode_to_air), lastEp: epOf(d.last_episode_to_air),
+    seasonEpisodes: (d.seasons || []).filter((x) => x.season_number > 0).map((x) => ({ n: x.season_number, episodes: x.episode_count ?? null, date: x.air_date || null })),
+    keywords: (d.keywords?.results || d.keywords?.keywords || []).map((k) => k.name).filter(Boolean).slice(0, 25),
+    watch: watchOf(d['watch/providers'], 'IT'),
   };
 }
 
+function epOf(e) {
+  if (!e) return null;
+  return { date: e.air_date || null, s: e.season_number ?? null, e: e.episode_number ?? null, name: e.name || null, runtime: e.runtime ?? null };
+}
+
+// Dove guardarla in modo legale (dati JustWatch tramite TMDB, da attribuire a JustWatch).
+export function watchOf(wp, region = 'IT') {
+  const r = wp?.results?.[region];
+  if (!r) return null;
+  const names = (arr) => (arr || []).sort((a, b) => (a.display_priority ?? 99) - (b.display_priority ?? 99)).map((p) => ({ id: p.provider_id, name: p.provider_name, logo: p.logo_path || null }));
+  return { link: r.link || null, flatrate: names(r.flatrate), free: names([...(r.free || []), ...(r.ads || [])]), rent: names(r.rent), buy: names(r.buy), region, at: Date.now() };
+}
+
 export async function getTv(id, key, prev = null, fetchFn) {
-  const d = await tmdbFetch(`/tv/${id}`, key, { language: 'it-IT', append_to_response: 'external_ids,alternative_titles,recommendations,videos,credits', include_video_language: 'it,en' }, fetchFn);
+  const d = await tmdbFetch(`/tv/${id}`, key, { language: 'it-IT', append_to_response: 'external_ids,alternative_titles,recommendations,videos,credits,keywords,watch/providers', include_video_language: 'it,en' }, fetchFn);
   return mapTv(d, prev);
 }
 

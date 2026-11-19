@@ -7,7 +7,16 @@
   const VERSION = chrome.runtime.getManifest().version;
 
   const ENT = { '&quot;': '"', '&#039;': "'", '&#39;': "'", '&lt;': '<', '&gt;': '>', '&amp;': '&' };
+  // Dati passati dal ponte nel mondo della pagina (src/content/bridge.js).
+  let bridged = null;
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || !e.data || e.data.__bingemap !== 'page') return;
+    bridged = e.data.data;
+    harvest();
+  });
+  window.postMessage({ __bingemap: 'ask' }, location.origin);
   function pageData() {
+    if (bridged) return bridged;
     const el = document.querySelector('[data-page]');
     if (el) { try { return JSON.parse(el.getAttribute('data-page')); } catch (e) { /* formato inatteso */ } }
     const m = document.documentElement.innerHTML.match(/data-page="([^"]*)"/);

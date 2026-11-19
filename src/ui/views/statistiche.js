@@ -25,7 +25,7 @@ export async function render(root, _p, ctx) {
   const newByMonth = new Map();
   for (const v of views) if (v.firstSeen) { const k = new Date(v.firstSeen).toISOString().slice(0, 7); newByMonth.set(k, (newByMonth.get(k) || 0) + 1); }
 
-  root.innerHTML = `<header><h1>Statistiche</h1><p class="muted" style="margin:4px 0 0">Numeri che servono a scegliere, non a fare classifiche.</p></header>
+  root.innerHTML = `<header class="between"><div><h1>Statistiche</h1><p class="muted" style="margin:4px 0 0">Numeri che servono a scegliere, non a fare classifiche.</p></div><a class="btn p" href="#/wrapped">${icon('gift', 16)}Il tuo anno in serie</a></header>
     <div class="grid g4">${[
       ['Serie nel catalogo', c.total], ['Righe importate', live.length], ['Completate', c.completed], ['Disponibili e non completate', c.plan + c.none + c.unknown],
       ['Disponibili e già completate', c.completed], ['Delle tue liste, mancanti', s.missing], ['Non presenti nelle tue liste', c.none], ['Scoperte iniziate quest\'anno', started.length],

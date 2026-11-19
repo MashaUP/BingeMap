@@ -1,7 +1,14 @@
 // Import guidato: fonte → file o accesso → mappatura (se serve) → anteprima con diff → report.
 import { e, toast, pickFiles, fileWrap, busy, statusBadge } from '../components.js';
 import { icon } from '../icons.js';
-import { SOURCES, parseImdb, parseFiles, parseZip, parseManual, rowsFromRecords, suggestMapping, parseCsv, parseXlsx } from '../../import/sources.js';
+import { SOURCES, parseImdb, parseFiles, parseZip, parseManual, rowsFromRecords, suggestMapping, parseCsv, parseXlsx, parseNetflix, rowsFromPasted } from '../../import/sources.js';
+import { decodeFile } from '../../import/csv.js';
+import { saveSettings } from '../../common/settings.js';
+import { extractTitles } from '../../import/paste.js';
+import { fetchAniList, readMalFile, ANILIST_API } from '../../import/anime.js';
+import { hasOrigin, requestOrigin } from '../../platform/platform.js';
+import { buildIndex, matchItem } from '../../match/matcher.js';
+import { getAll } from '../../db/db.js';
 import { previewImport, commitImport } from '../../import/pipeline.js';
 import { connectSimkl, fetchSimklLibrary, simklConnected, simklRedirect } from '../../import/simkl.js';
 import { getSetting, setSetting } from '../../db/db.js';
@@ -19,6 +26,10 @@ const CARDS = [
   ['showly', 'Showly', 'Backup JSON.', 'upload'],
   ['seriesguide', 'SeriesGuide', 'Export JSON.', 'upload'],
   ['sofa', 'Sofa Time', 'ZIP «Export All Data» (items.csv con tag).', 'upload'],
+  ['netflix', 'Netflix', 'Cronologia «Attività di visualizzazione» (CSV): serie, episodi visti, ultima visione.', 'upload'],
+  ['anilist', 'AniList', 'Anime: lista pubblica del tuo profilo, con episodi visti e voti.', 'sparkles'],
+  ['mal', 'MyAnimeList', 'Anime: file XML dell\'esportazione (anche .xml.gz).', 'upload'],
+  ['paste', 'Incolla una lista', 'Un articolo «le 50 migliori serie…»: ti dico quali hai già visto.', 'wand'],
   ['csv', 'CSV, JSON o Excel', 'Qualsiasi file: scegli tu le colonne.', 'list'],
   ['manual', 'Lista manuale', 'Incolla i titoli, uno per riga.', 'plus'],
 ];
@@ -70,6 +81,84 @@ export async function render(root, { args }, ctx) {
     return;
   }
 
+  if (source === 'netflix') {
+    step.innerHTML = `<div class="panel col"><p class="muted" style="margin:0">Su Netflix dal browser: Account › Profili › scegli il profilo › <b>Attività di visualizzazione</b> › <b>Scarica tutto</b>. Va bene anche il file <code>ViewingActivity.csv</code> della richiesta completa dei dati (lì scegli il profilo qui sotto).</p>
+      <p class="muted small" style="margin:0">Netflix non dice se una serie è finita: quelle guardate negli ultimi 60 giorni diventano «In corso», le altre «In pausa». Gli episodi visti diventano il progresso. I film vengono ignorati.</p>
+      <button class="btn p" style="align-self:flex-start" data-pick>${icon('upload')}Scegli il file CSV</button><div data-prof></div></div>`;
+    step.querySelector('[data-pick]').addEventListener('click', async () => {
+      const files = await chooseFiles('.csv', false);
+      if (!files) return;
+      const text = await decodeFile(files[0]);
+      const first = parseNetflix(text);
+      const go = async (profile) => { const r = profile ? parseNetflix(text, { profile }) : first; state.scope = `netflix:${profile || 'file'}`; await afterParse(r); };
+      if (first.profiles.length > 1) {
+        step.querySelector('[data-prof]').innerHTML = `<label class="field" style="max-width:320px">Profilo<select data-p>${first.profiles.map((p) => `<option>${e(p)}</option>`).join('')}</select></label><button class="btn" data-pgo>Continua</button>`;
+        step.querySelector('[data-pgo]').addEventListener('click', () => go(step.querySelector('[data-p]').value));
+      } else await go(first.profiles[0] || null);
+    });
+    return;
+  }
+
+  if (source === 'anilist') {
+    step.innerHTML = `<div class="panel col"><p class="muted" style="margin:0">Scrivi il nome del tuo profilo AniList (deve essere pubblico). BingeMap legge stati, episodi visti e voti; i film vengono ignorati. Nessuna password.</p>
+      <div class="row"><input type="text" data-user placeholder="nome profilo o link anilist.co/user/…" value="${e(ctx.ui.settings.anilistUser || '')}" style="max-width:340px"><button class="btn p" data-go>${icon('download')}Leggi la lista</button></div><div data-msg></div></div>`;
+    step.querySelector('[data-go]').addEventListener('click', async () => {
+      const user = step.querySelector('[data-user]').value.trim();
+      const msg = step.querySelector('[data-msg]');
+      try {
+        if (isExtension && !(await hasOrigin(ANILIST_API)) && !(await requestOrigin(ANILIST_API))) { msg.innerHTML = '<span class="s-drop">Permesso non concesso.</span>'; return; }
+        msg.textContent = 'Leggo la lista…';
+        const r = await fetchAniList(user);
+        await saveSettings({ anilistUser: user });
+        state.scope = `anilist:${user.toLowerCase()}`; state.fileName = `AniList ${user}`;
+        await afterParse(r);
+      } catch (err) { msg.innerHTML = `<span class="s-drop">${e(err.message)}</span>`; }
+    });
+    return;
+  }
+
+  if (source === 'mal') {
+    step.innerHTML = `<div class="panel col"><p class="muted" style="margin:0">Su MyAnimeList: Profilo › Impostazioni › <b>Export</b> › Anime List. Scegli il file scaricato (<code>animelist_….xml.gz</code> o già estratto).</p>
+      <button class="btn p" style="align-self:flex-start" data-pick>${icon('upload')}Scegli il file</button></div>`;
+    step.querySelector('[data-pick]').addEventListener('click', async () => {
+      const files = await chooseFiles('.xml,.gz', false);
+      if (!files) return;
+      try { const r = await readMalFile(new Uint8Array(await files[0].arrayBuffer())); state.scope = 'mal:file'; state.fileName = files[0].name; await afterParse(r); }
+      catch (err) { toast('File non leggibile: ' + err.message, 'err'); }
+    });
+    return;
+  }
+
+  if (source === 'paste') {
+    step.innerHTML = `<div class="panel col"><label class="field">Incolla il testo (un articolo, una classifica, un elenco)<textarea data-text rows="12" placeholder="1. Dark (2017)&#10;2. Severance – thriller aziendale&#10;3. Silo su Apple TV+"></textarea></label>
+      <label class="field" style="max-width:420px">Nome della lista<input type="text" data-name value="Lista incollata ${new Date().toLocaleDateString('it-IT')}"></label>
+      <button class="btn p" style="align-self:flex-start" data-go>${icon('wand')}Trova i titoli</button><div data-res class="col"></div></div>`;
+    step.querySelector('[data-go]').addEventListener('click', async () => {
+      const items = extractTitles(step.querySelector('[data-text]').value);
+      const res = step.querySelector('[data-res]');
+      if (!items.length) { res.innerHTML = `<div class="notice warn">${icon('alert')}<div>Nessun titolo riconosciuto nel testo.</div></div>`; return; }
+      const index = buildIndex((await getAll('catalog_titles')).filter((c) => c.status !== 'gone'));
+      const found = items.map((it, i) => ({ it, m: matchItem({ key: `p${i}`, title: it.title, year: it.year, mediaType: 'tv', ids: {} }, index) }));
+      const cks = found.filter((f) => f.m.ck && f.m.confidence >= 70).map((f) => f.m.ck);
+      const views = new Map((await ctx.store.views(cks)).map((v) => [v.ck, v]));
+      const rows = found.map((f) => { const v = f.m.ck && f.m.confidence >= 70 ? views.get(f.m.ck) || [...views.values()].find((x) => x.cks?.includes(f.m.ck)) : null; return { ...f, v }; });
+      const seen = rows.filter((r) => r.v?.status === 'completed');
+      const mine = rows.filter((r) => r.v && ['plan', 'watching', 'hold', 'dropped'].includes(r.v.status));
+      const fresh = rows.filter((r) => !r.v || ['none', 'unknown'].includes(r.v.status));
+      res.innerHTML = `<h3 style="margin:8px 0 0">${fmtNum(items.length)} titoli: <span class="s-done">${fmtNum(seen.length)} già visti</span>, ${fmtNum(mine.length)} già nelle tue liste, <span class="s-match">${fmtNum(fresh.length)} da scoprire</span></h3>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Titolo nel testo</th><th>Nel catalogo</th><th>Stato</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${e(r.it.title)}${r.it.year ? ` (${r.it.year})` : ''}</td><td>${r.v ? `<a href="#/serie/${encodeURIComponent(r.v.ck)}">${e(r.v.name)}</a>${r.m.confidence < 85 ? ' <span class="muted small">(probabile)</span>' : ''}` : '<span class="muted">non trovato</span>'}</td><td>${r.v ? statusBadge(r.v.status) : ''}</td></tr>`).join('')}</tbody></table></div>
+        <div class="row"><button class="btn p" data-add ${fresh.length ? '' : 'disabled'}>${icon('plus')}Aggiungi le ${fmtNum(fresh.length)} da scoprire a «Da vedere»</button></div>`;
+      res.querySelector('[data-add]').addEventListener('click', async () => {
+        const name = step.querySelector('[data-name]').value.trim() || 'Lista incollata';
+        state.scope = `paste:${name}`; state.fileName = name;
+        // Per i titoli già trovati nel catalogo si usano nome e anno del catalogo: il riconoscimento diventa sicuro.
+        const items = fresh.map((r) => (r.v ? { title: r.v.name, year: r.v.year ?? r.it.year } : r.it));
+        await afterParse({ rows: rowsFromPasted(items, { status: 'plan', listName: name }), skippedMovies: 0, notes: [] });
+      });
+    });
+    return;
+  }
+
   const ACCEPT = { refract: '.zip,.json,.csv', trakt: '.zip,.json', imdb: '.csv', tvtime: '.zip,.json,.csv', showly: '.json,.zip', seriesguide: '.json,.zip', sofa: '.zip,.csv', csv: '.csv,.json,.xlsx,.txt,.tsv' };
   const NOTE = {
     refract: 'Il formato dello ZIP di Refract non è documentato: BingeMap riconosce titoli, anni, ID, stati, voti, tag e liste dai nomi delle colonne. Controlla l\'anteprima.',
@@ -86,14 +175,14 @@ export async function render(root, { args }, ctx) {
     try {
       if (source === 'imdb') {
         const rows = []; let skipped = 0; const kinds = [];
-        for (const f of files) { const r = parseImdb(await f.text(), f.name); rows.push(...r.rows); skipped += r.skippedMovies; kinds.push(r.kind); }
+        for (const f of files) { const r = parseImdb(await decodeFile(f), f.name); rows.push(...r.rows); skipped += r.skippedMovies; kinds.push(r.kind); }
         state.scope = `imdb:${[...new Set(kinds)].sort().join('+')}`;
         await afterParse({ rows, skippedMovies: skipped });
       } else if (source === 'csv') {
         const f = files[0];
         if (/\.json$/i.test(f.name)) { state.scope = `json:${f.name}`; state.source = 'json'; await afterParse(await parseFiles([fileWrap(f)], 'json')); }
         else {
-          const parsed = /\.xlsx$/i.test(f.name) ? await parseXlsx(new Uint8Array(await f.arrayBuffer())) : parseCsv(await f.text());
+          const parsed = /\.xlsx$/i.test(f.name) ? await parseXlsx(new Uint8Array(await f.arrayBuffer())) : parseCsv(await decodeFile(f));
           state.source = /\.xlsx$/i.test(f.name) ? 'xlsx' : 'csv'; state.scope = `${state.source}:${f.name}`;
           state.headers = parsed.headers; state.records = parsed.records;
           const sig = 'map:' + hash(parsed.headers.join('|'));

@@ -11,6 +11,7 @@ import { VERSION } from '../../common/version.js';
 import { getLinks } from '../../common/links.js';
 import { deleteDb, dbName } from '../../db/db.js';
 import { runMatching } from '../../match/run.js';
+import { applyLook } from '../app.js';
 
 const SECS = [['catalogo', 'Catalogo'], ['servizi', 'Servizi'], ['sync', 'Sincronizzazione'], ['scoperta', 'Scoperta'], ['notifiche', 'Notifiche'], ['profili', 'Profili'], ['aspetto', 'Aspetto'], ['avanzate', 'Avanzate'], ['info', 'Informazioni']];
 
@@ -18,7 +19,7 @@ export async function render(root, { args }, ctx) {
   const sec = args[0] || 'catalogo';
   const s = ctx.ui.settings;
   root.innerHTML = `<header><h1>Impostazioni</h1></header>
-    <div class="tabs">${SECS.map(([k, l]) => `<a class="btn sm" aria-selected="${k === sec}" href="#/impostazioni/${k}">${e(l)}</a>`).join('')}</div>
+    <nav class="tabs" aria-label="Sezioni">${SECS.map(([k, l]) => `<a class="btn sm" ${k === sec ? 'aria-current="page"' : ''} href="#/impostazioni/${k}">${e(l)}</a>`).join('')}</nav>
     <form class="panel col" data-form style="gap:16px"></form>`;
   const f = root.querySelector('[data-form]');
   const save = async (patch, msg = 'Salvato') => { ctx.ui.settings = await saveSettings(patch); toast(msg, 'ok'); if (isExtension) send('alarms.refresh').catch(() => {}); };
@@ -141,8 +142,29 @@ export async function render(root, { args }, ctx) {
   }
 
   if (sec === 'aspetto') {
-    f.innerHTML = `<h2>Aspetto</h2><label class="check"><input type="radio" name="theme" value="dark" ${s.theme !== 'light' ? 'checked' : ''}> Scuro</label><label class="check"><input type="radio" name="theme" value="light" ${s.theme === 'light' ? 'checked' : ''}> Chiaro</label><button class="btn p" style="align-self:flex-start">Salva</button>`;
-    f.addEventListener('submit', async (ev) => { ev.preventDefault(); const t = f.querySelector('input[name=theme]:checked').value; await save({ theme: t }); document.documentElement.dataset.theme = t; });
+    const KNOWN = ['Netflix', 'Amazon Prime Video', 'Disney Plus', 'NOW', 'Sky Go', 'Apple TV+', 'Paramount Plus', 'HBO Max', 'Rai Play', 'Mediaset Infinity', 'TimVision', 'Crunchyroll', 'MUBI', 'Discovery+'];
+    const mine = new Set(s.myServices || []);
+    f.innerHTML = `<h2>Aspetto</h2><label class="check"><input type="radio" name="theme" value="dark" ${s.theme !== 'light' ? 'checked' : ''}> Scuro</label><label class="check"><input type="radio" name="theme" value="light" ${s.theme === 'light' ? 'checked' : ''}> Chiaro</label>
+      <h2>Leggibilità</h2>
+      <label class="check"><input type="checkbox" name="contrast" ${s.contrast === 'high' ? 'checked' : ''}> Alto contrasto (testi più netti, bordi marcati, evidenziazione forte del punto attivo)</label>
+      <label class="field" style="max-width:260px">Dimensione del testo<select name="textScale">${[100, 115, 130].map((z) => `<option value="${z}" ${Number(s.textScale || 100) === z ? 'selected' : ''}>${z === 100 ? 'Normale' : z === 115 ? 'Grande' : 'Molto grande'} (${z}%)</option>`).join('')}</select></label>
+      <h2>Interfaccia</h2><label class="field" style="max-width:260px">Lingua<select name="lang"><option value="it" ${s.lang !== 'en' ? 'selected' : ''}>Italiano</option><option value="en" ${s.lang === 'en' ? 'selected' : ''}>English</option></select></label>
+      <p class="muted small" style="margin:0">In inglese sono tradotti menu, stati, filtri, pulsanti e le pagine principali; qualche frase lunga resta in italiano.</p>
+      <h2>Senza spoiler</h2><label class="check"><input type="checkbox" name="spoilerFree" ${s.spoilerFree ? 'checked' : ''}> Nascondi la trama delle serie che stai guardando o hai messo in pausa (la puoi sempre mostrare)</label>
+      <h2>I tuoi abbonamenti</h2><p class="muted small" style="margin:0">Servono per «Dove guardarla legalmente»: le serie incluse nei tuoi servizi vengono evidenziate e puoi filtrarle.</p>
+      <div class="row" style="gap:8px">${KNOWN.map((n) => `<label class="check chip" style="padding-right:12px"><input type="checkbox" name="svc" value="${e(n)}" ${mine.has(n) ? 'checked' : ''}> ${e(n)}</label>`).join('')}</div>
+      <label class="field" style="max-width:320px">Altri servizi (nomi separati da virgola, come su JustWatch)<input name="svcOther" value="${e([...mine].filter((x) => !KNOWN.includes(x)).join(', '))}"></label>
+      <button class="btn p" style="align-self:flex-start">Salva</button>`;
+    f.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const t = f.querySelector('input[name=theme]:checked').value;
+      const svc = [...f.querySelectorAll('input[name=svc]:checked')].map((x) => x.value).concat(f.svcOther.value.split(',').map((x) => x.trim()).filter(Boolean));
+      const langChanged = f.lang.value !== (s.lang || 'it');
+      await save({ theme: t, lang: f.lang.value, spoilerFree: f.spoilerFree.checked, myServices: [...new Set(svc)], contrast: f.contrast.checked ? 'high' : 'normal', textScale: Number(f.textScale.value) || 100 });
+      document.documentElement.dataset.theme = t;
+      applyLook(ctx.ui.settings);
+      if (langChanged) location.reload();
+    });
   }
 
   if (sec === 'avanzate') {
@@ -174,6 +196,7 @@ export async function render(root, { args }, ctx) {
       <h2>Attribuzioni</h2>
       <p class="small" style="margin:0">Questo prodotto usa l'API TMDB ma non è approvato né certificato da TMDB. Dati e immagini dei metadati: <a href="https://www.themoviedb.org" target="_blank" rel="noopener">The Movie Database (TMDB)</a>.</p>
       <p class="small" style="margin:0">Dati su dove guardare (catalogo legale): <a href="https://www.justwatch.com" target="_blank" rel="noopener">JustWatch</a>.</p>
+      <p class="small" style="margin:0">Anime: dati di <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>. Mappa del mondo: <a href="https://www.naturalearthdata.com" target="_blank" rel="noopener">Natural Earth</a> (pubblico dominio) tramite world-atlas (ISC).</p>
       <p class="small" style="margin:0">Font Inter e Sora (SIL Open Font License). Icone in stile Lucide (ISC).</p>
       <h2>Avvertenza</h2>
       <p class="small muted" style="margin:0">BingeMap non ospita, non trasmette e non collega flussi video. Legge solo metadati del catalogo dal browser dell'utente. L'uso di siti non autorizzati può comportare sanzioni: valuta il catalogo legale.</p>`;

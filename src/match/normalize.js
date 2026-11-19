@@ -19,7 +19,8 @@ export function normTitle(raw) {
   s = s.replace(/&/g, ' and ');
   s = s.replace(/[([]\s*(?:18|19|20|21)\d{2}\s*[)\]]\s*$/, ' ');
   s = s.replace(/'/g, ' ');
-  s = s.replace(/[^a-z0-9]+/g, ' ').trim();
+  // Lettere e cifre di qualsiasi alfabeto (coreano, giapponese, cirillico…), non solo a-z.
+  s = s.replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
   let words = s.split(' ').filter(Boolean);
   while (words.length > 1 && ARTICLES.includes(words[0])) words = words.slice(1);
   words = words.map((w) => ROMAN[w] || w);

@@ -9,6 +9,9 @@ import { VERSION } from '../common/version.js';
 import { onEvent, isExtension, send, openUrl } from '../platform/platform.js';
 import { setNextUp } from '../library/data.js';
 import { log } from '../common/diag.js';
+import { undo, canUndo } from '../library/undo.js';
+import { needsReload } from '../common/update.js';
+import { t, translateTree, setLang } from './i18n.js';
 
 const ROUTES = {
   benvenuto: () => import('./views/benvenuto.js'),
@@ -26,10 +29,23 @@ const ROUTES = {
   attivita: () => import('./views/attivita.js'),
   impostazioni: () => import('./views/impostazioni.js'),
   coppia: () => import('./views/coppia.js'),
+  calendario: () => import('./views/calendario.js'),
+  maratona: () => import('./views/maratona.js'),
+  mappa: () => import('./views/mappa.js'),
+  scorri: () => import('./views/scorri.js'),
+  stasera: () => import('./views/stasera.js'),
+  wrapped: () => import('./views/wrapped.js'),
+  esplora: () => import('./views/esplora.js'),
+  universi: () => import('./views/universi.js'),
+  classici: () => import('./views/classici.js'),
+  cronologia: () => import('./views/cronologia.js'),
+  persone: () => import('./views/persone.js'),
+  mondo: () => import('./views/mondo.js'),
+  anime: () => import('./views/anime.js'),
 };
 
 const NAV = [
-  ['compass', 'Scopri', 'scopri'], ['grid', 'Catalogo', 'catalogo'], ['library', 'La mia libreria', 'libreria'], ['alert', 'Mancanti', 'mancanti'],
+  ['compass', 'Scopri', 'scopri'], ['layers', 'Esplora', 'esplora'], ['grid', 'Catalogo', 'catalogo'], ['map', 'Mappa', 'mappa'], ['calendar', 'In arrivo', 'calendario'], ['library', 'La mia libreria', 'libreria'], ['alert', 'Mancanti', 'mancanti'],
   null, ['bookmark', 'Ricerche salvate', 'ricerche'], ['chart', 'Statistiche', 'statistiche'], ['activity', 'Attività', 'attivita'], ['settings', 'Impostazioni', 'impostazioni'],
 ];
 
@@ -57,7 +73,8 @@ function sidebar(active) {
     if (!n) return '<div class="sep"></div>';
     const [ic, label, route] = n;
     const on = route === active || (route === 'catalogo' && active === 'filtri') || (route === 'ricerche' && (active === 'ricerca' || active === 'preset')) || (route === 'libreria' && active === 'import');
-    const count = route === 'mancanti' && miss ? `<span class="count">${miss}</span>` : '';
+    const air = s?.counts?.airing || 0;
+    const count = route === 'mancanti' && miss ? `<span class="count">${miss}</span>` : route === 'calendario' && air ? `<span class="count">${air}</span>` : '';
     return `<a href="#/${route}" class="${on ? 'on' : ''}" ${on ? 'aria-current="page"' : ''}>${icon(ic)}<span>${label}</span>${count}</a>`;
   }).join('');
   const L = ui.links || {};
@@ -86,6 +103,7 @@ async function route() {
     const ret = await mod.render(root(), { name, args, params }, ctx);
     if (my !== renderSeq) return;
     if (typeof ret === 'function') cleanup = ret;
+    translateTree(document.getElementById('side')); translateTree(root());
     document.querySelector('.main')?.focus({ preventScroll: true });
     window.scrollTo(0, 0);
   } catch (err) {
@@ -94,7 +112,39 @@ async function route() {
   }
 }
 
-export const ctx = { store, nav, toast, ui, rerender: () => route() };
+// Tema ad alto contrasto e testo più grande (funzione 18).
+export function applyLook(st) {
+  const h = document.documentElement;
+  h.dataset.contrast = st.contrast === 'high' ? 'high' : 'normal';
+  const z = [100, 115, 130].includes(Number(st.textScale)) ? Number(st.textScale) : 100;
+  h.style.zoom = z === 100 ? '' : String(z / 100);
+}
+
+// Annulla globale (funzione 14).
+export async function doUndo() {
+  if (!canUndo()) { toast(t('Niente da annullare'), ''); return; }
+  const step = await undo();
+  toast(`${t('Annullato')}: ${step.label}`, 'ok');
+  await store.changed(true);
+  if (isExtension) send('data.changed').catch(() => {});
+  route();
+}
+
+// Codice vecchio dopo un aggiornamento dell'estensione: si chiede di ricaricare la scheda.
+async function checkStale() {
+  if (!isExtension || document.querySelector('[data-stale]')) return;
+  const w = await send('app.version').catch(() => null);
+  if (!needsReload(VERSION, w)) return;
+  const bar = document.createElement('div');
+  bar.className = 'notice warn'; bar.dataset.stale = '1';
+  bar.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);top:12px;z-index:60;max-width:560px';
+  bar.innerHTML = `<div>BingeMap è stato aggiornato alla ${w}: ricarica la pagina per usare la nuova versione.</div>`;
+  const b = document.createElement('button'); b.className = 'btn sm p'; b.textContent = 'Ricarica'; b.addEventListener('click', () => location.reload());
+  bar.appendChild(b); document.body.appendChild(bar);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkStale(); });
+
+export const ctx = { store, nav, toast, ui, rerender: () => route(), undo: doUndo, t };
 
 // --- Azioni globali (delegazione)
 document.addEventListener('click', async (ev) => {
@@ -116,6 +166,7 @@ document.addEventListener('keydown', (ev) => {
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') { ev.preventDefault(); palette(); return; }
   if (ev.key === 'Enter' && document.activeElement?.dataset?.open) nav('serie/' + encodeURIComponent(document.activeElement.dataset.open));
   if (typing) return;
+  if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && ev.key.toLowerCase() === 'z' && !ev.defaultPrevented) { ev.preventDefault(); doUndo(); return; }
   if (ev.key === '/') { const s = document.querySelector('[data-search]'); if (s) { ev.preventDefault(); s.focus(); } }
 });
 // Immagini che non si caricano: resta il segnaposto.
@@ -135,6 +186,12 @@ const COMMANDS = [
   ['Vai a Scopri', 'scopri'], ['Vai al Catalogo', 'catalogo'], ['Costruttore di filtri', 'filtri'], ['La mia libreria', 'libreria'],
   ['Da confermare', 'libreria/coda'], ['Importa liste', 'import'], ['Mancanti', 'mancanti'], ['Ricerche salvate', 'ricerche'],
   ['Statistiche', 'statistiche'], ['Attività e backup', 'attivita'], ['Impostazioni', 'impostazioni'], ['Serata in due', 'coppia'],
+  ['Mappa delle serie', 'mappa'], ['In arrivo (calendario)', 'calendario'], ['Scorri (smista in fretta)', 'scorri'], ['Ho 40 minuti', 'stasera?min=40'],
+  ['Pianifica la maratona', 'maratona'], ['Il tuo anno in serie (Wrapped)', 'wrapped'], ['Incolla una lista', 'import/paste'], ['Importa da Netflix', 'import/netflix'],
+  ['Annulla l\'ultima modifica', '__undo'], ['Esplora', 'esplora'], ['Universi e spin-off', 'universi'], ['I grandi classici', 'classici'],
+  ['La tua linea del tempo', 'cronologia'], ['Persone che segui', 'persone'], ['Il giro del mondo in serie', 'mondo'], ['Anime della stagione', 'anime'],
+  ['Quasi finite', 'preset/p-almost'], ['Prova il pilota', 'preset/p-pilot'], ['Cancellate senza finale', 'preset/p-open'], ['Stagioni mancanti nel catalogo', 'preset/p-missing-seasons'],
+  ['Importa da AniList', 'import/anilist'], ['Importa da MyAnimeList', 'import/mal'], ['Esporta verso altre app', 'attivita'],
   ['Nuove stagioni', 'preset/p-newseason'], ['Stasera ho 2 ore', 'preset/p-tonight'], ['Riprendi o lascia', 'preset/p-stalled'],
 ];
 async function palette() {
@@ -144,7 +201,7 @@ async function palette() {
   const draw = () => { list.innerHTML = opts.map((o, i) => `<div class="opt" role="option" aria-selected="${i === sel}" data-i="${i}">${icon(o.icon)}<span>${e(o.label)}</span><span class="muted small" style="margin-left:auto">${e(o.hint || '')}</span></div>`).join('') || '<div class="muted" style="padding:10px">Nessun risultato</div>'; };
   const update = async () => {
     const q = inp.value.trim().toLowerCase();
-    const cmds = COMMANDS.filter(([l]) => !q || l.toLowerCase().includes(q)).map(([label, path]) => ({ label, icon: 'command', hint: 'comando', go: () => nav(path) }));
+    const cmds = COMMANDS.filter(([l]) => !q || l.toLowerCase().includes(q) || t(l).toLowerCase().includes(q)).map(([label, path]) => ({ label: t(label), icon: 'command', hint: t('comando'), go: () => (path === '__undo' ? doUndo() : nav(path)) }));
     let titles = [];
     if (q.length >= 2) {
       const r = await store.query({ ast: { all: [{ field: 'text', q }] }, sort: 'score', limit: 8 });
@@ -164,14 +221,24 @@ async function palette() {
 
 // --- Avvio
 async function boot() {
-  const theme = (await loadSettings()).theme;
-  document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+  const st = await loadSettings();
+  document.documentElement.dataset.theme = st.theme === 'light' ? 'light' : 'dark';
+  setLang(st.lang);
+  applyLook(st);
   ui.links = await getLinks();
   refreshLinks().then((l) => { ui.links = l; });
   await store.init();
   window.addEventListener('hashchange', route);
   onEvent((evt) => {
-    if (evt.kind === 'data') store.changed();
+    if (evt.kind === 'data') {
+      // Modifica fatta in un'altra scheda (o dal sito): si ricaricano i dati, senza rimandare l'avviso (niente rimbalzi).
+      if (evt.from && evt.from === location.href) return;
+      store.refresh().then(() => {
+        const name = parseHash().name;
+        const busyUi = document.querySelector('.modal-bg') || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName);
+        if (!busyUi && !['impostazioni', 'import', 'filtri', 'scorri', 'mappa'].includes(name)) route();
+      });
+    }
     if (evt.kind === 'scan') {
       document.dispatchEvent(new CustomEvent('bm-scan', { detail: evt.job }));
       if (['done', 'partial', 'stopped', 'blocked', 'error'].includes(evt.job.status) && evt.job.endedAt && Date.now() - evt.job.endedAt < 5000) store.changed();

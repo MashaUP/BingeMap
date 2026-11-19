@@ -28,6 +28,11 @@ export async function render(root, _p, ctx) {
   const lastSnap = snaps.filter((x) => x.kind !== 'package').sort((a, b) => b.date - a.date)[0];
   const backupAge = Math.max(lastBackup || 0, lastSync || 0);
   const alerts = [
+    counts.almost ? ['check', `${counts.almost} serie quasi finite: ti mancano pochi episodi`, 'preset/p-almost'] : null,
+    counts.missingSeasons ? ['alert', `${counts.missingSeasons} serie che segui hanno stagioni uscite che il catalogo non ha ancora`, 'preset/p-missing-seasons'] : null,
+    counts.followedNew ? ['users', `${counts.followedNew} serie nuove con persone che segui`, 'persone'] : null,
+    counts.renewal ? ['refresh', `${counts.renewal} serie che segui sono state rinnovate, concluse o cancellate`, 'calendario'] : null,
+    counts.airing ? ['calendar', `${counts.airing} serie che segui hanno episodi in arrivo`, 'calendario'] : null,
     counts.newSeason ? ['refresh', `${counts.newSeason} serie completate hanno una nuova stagione`, 'preset/p-newseason'] : null,
     counts.endedNow ? ['check', `${counts.endedNow} serie che aspettavi ora sono concluse`, 'preset/p-endednow'] : null,
     counts.stalled ? ['clock', `${counts.stalled} serie ferme da tempo: riprendi o lascia`, 'preset/p-stalled'] : null,
@@ -50,6 +55,7 @@ export async function render(root, _p, ctx) {
     <div class="col" style="flex:0 1 260px;gap:10px">
       <button class="btn p lg" type="button" data-surprise>${icon('dice', 20)}Sorprendimi</button>
       <a class="btn" href="#/catalogo?q=${encodeObj(disc)}">${icon('grid')}Esplora il catalogo</a>
+      <form class="row" data-tonight style="gap:6px;flex-wrap:nowrap;white-space:nowrap"><span class="muted">Ho</span><input type="number" name="min" min="10" max="240" value="40" style="width:76px" aria-label="Minuti a disposizione"><span class="muted">minuti</span><button class="btn sm" type="submit">${icon('clock', 14)}Cosa guardo</button></form>
     </div>
   </section>
   ${alerts.length ? `<section class="col" style="gap:8px">${alerts.map(([ic, t, href]) => `<a class="notice" href="#/${href}" style="text-decoration:none;color:var(--text)">${icon(ic)}<span>${e(t)}</span><span style="margin-left:auto">${icon('chev')}</span></a>`).join('')}</section>` : ''}
@@ -64,6 +70,7 @@ export async function render(root, _p, ctx) {
     <div class="between"><h2 id="rec-t">Consigliate per te</h2><span class="muted small">Regole trasparenti: generi, tag, voti, somiglianze</span></div>
     ${reco.length && reco.some((v) => v.why.length) ? cards(reco, { why: true }) : `<div class="notice">${icon('info')}<div>Importa le tue liste (con voti o tag) per avere consigli spiegati. Intanto ecco le più votate tra le non completate.</div></div>${cards(reco)}`}
   </section>
+  <section class="grid g4">${[['map', 'La mappa', 'Le zone che non hai ancora esplorato', 'mappa'], ['layers', 'Scorri', 'Smista in fretta le serie mai viste', 'scorri'], ['calendar', 'In arrivo', 'Episodi e stagioni delle tue serie', 'calendario'], ['route', 'Maratona', 'Quando finisci le prossime 5', 'maratona'], ['globe', 'Il giro del mondo', 'I paesi che non hai mai provato', 'mondo'], ['star', 'I grandi classici', 'Le più votate che ti mancano', 'classici'], ['layers', 'Universi', 'Serie collegate e ordine di visione', 'universi'], ['compass', 'Tutto in Esplora', 'Anime, persone, linea del tempo…', 'esplora']].map(([ic, t, d, r]) => `<a class="card" href="#/${r}" style="padding:16px;display:flex;gap:12px;align-items:center;text-decoration:none;color:var(--text)">${icon(ic, 22)}<span class="col" style="gap:2px"><b>${e(t)}</b><span class="muted small">${e(d)}</span></span></a>`).join('')}</section>
   <section class="col">
     <div class="between"><h2>Umore</h2></div>
     <div class="row" style="gap:8px">${moods(ui.settings.discovery).map((m) => `<a class="chip" href="#/catalogo?q=${encodeObj(m.query)}">${e(m.name)}</a>`).join('')}<a class="chip" href="#/coppia">${icon('users', 14)}Serata in due</a></div>
@@ -88,6 +95,7 @@ export async function render(root, _p, ctx) {
     nav('catalogo?q=' + encodeObj(query));
   });
   root.querySelector('[data-surprise]').addEventListener('click', () => surpriseDialog(ctx, disc));
+  root.querySelector('[data-tonight]').addEventListener('submit', (ev) => { ev.preventDefault(); nav(`stasera?min=${ev.target.min.value || 40}`); });
 }
 
 export async function surpriseDialog(ctx, ast) {

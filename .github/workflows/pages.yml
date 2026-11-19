@@ -1,10 +1,12 @@
 name: App web (GitHub Pages)
 
 # Pubblica l'app web (PWA) con lo stesso codice dell'estensione: catalogo legale e sincronizzazione Google Drive.
+# Se GitHub Pages non è attivo nel repository il workflow non fallisce: lo segnala e salta la pubblicazione.
+# Per attivarlo: Settings › Pages › Build and deployment › Source: «GitHub Actions».
 on:
   push:
     branches: [main]
-    paths: ['web/**', 'src/**', 'assets/**']
+    paths: ['web/**', 'src/**', 'assets/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -17,13 +19,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.pages.outputs.enabled }}
+    steps:
+      - id: pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/pages" --silent 2>/dev/null; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=GitHub Pages non attivo::Attivalo in Settings › Pages › Source: GitHub Actions, poi rilancia questo workflow. Pubblicazione saltata."
+          fi
+
   deploy:
+    needs: check
+    if: needs.check.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Prepara il sito
         run: |
           mkdir -p _site
@@ -31,9 +51,9 @@ jobs:
           cp web/sw.js _site/sw.js
           printf '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=web/index.html"><title>BingeMap</title><a href="web/index.html">Apri BingeMap</a>' > _site/index.html
           rm -rf _site/src/background _site/src/content
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

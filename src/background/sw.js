@@ -13,8 +13,13 @@ import { atomic, getSetting } from '../db/db.js';
 import { syncNow } from '../sync/drive.js';
 import { STATUS_LABEL } from '../library/status.js';
 import { setProfile } from '../db/db.js';
+import { renewalAlerts } from '../library/alerts.js';
+import { normTitle } from '../match/normalize.js';
+import { findByText } from '../library/search.js';
+import { encodeObj } from '../common/util.js';
 
 const CONTENT_ID = 'bm-site';
+const BRIDGE_ID = 'bm-bridge';
 
 // Mantiene vivo il service worker durante le operazioni lunghe (ogni chiamata API azzera il timer di inattività).
 function keepAlive() {
@@ -29,7 +34,52 @@ scanner.setHooks({
   afterPromote: async (snap, job) => { await afterCatalogChange(snap, job); },
 });
 
+// Menu del tasto destro e barra degli indirizzi (funzione 11).
+function setupMenus() {
+  if (!chrome.contextMenus) return;
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: 'bm-search', title: 'Cerca «%s» in BingeMap', contexts: ['selection'] });
+    chrome.contextMenus.create({ id: 'bm-plan', title: 'Aggiungi «%s» a Da vedere', contexts: ['selection'] });
+  });
+}
+const appPage = (hash) => chrome.runtime.getURL('src/ui/app.html#/' + hash);
+const searchHash = (q) => 'catalogo?q=' + encodeObj({ all: [{ field: 'text', q }] });
+
+async function quickPlan(text) {
+  const { views } = await viewsBySite(true);
+  const hits = findByText(views, text, 3);
+  const exact = hits.filter((v) => v.norm === normTitle(text));
+  if (exact.length !== 1) { chrome.tabs.create({ url: appPage(searchHash(text)) }); return; }
+  const v = exact[0];
+  if (['none', 'unknown'].includes(v.status)) {
+    await setOverlay(v.ck, { status: 'plan' }, { undo: false });
+    invalidate(); broadcast({ kind: 'data' });
+    notify(`bm-t-${v.ck}`, 'Aggiunta a Da vedere', `${v.name}${v.year ? ` (${v.year})` : ''}`);
+  } else notify(`bm-t-${v.ck}`, 'È già nelle tue liste', `${v.name}: ${STATUS_LABEL[v.status]}`);
+}
+
+chrome.contextMenus?.onClicked.addListener(async (info) => {
+  const text = String(info.selectionText || '').trim().slice(0, 120);
+  if (!text) return;
+  if (info.menuItemId === 'bm-search') chrome.tabs.create({ url: appPage(searchHash(text)) });
+  if (info.menuItemId === 'bm-plan') { try { await quickPlan(text); } catch (e) { await log('warn', 'menu', 'plan', e.message); } }
+});
+
+const xmlEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+chrome.omnibox?.setDefaultSuggestion({ description: 'Cerca nel catalogo di BingeMap: <match>%s</match>' });
+chrome.omnibox?.onInputChanged.addListener(async (text, suggest) => {
+  try {
+    const { views } = await viewsBySite(true);
+    suggest(findByText(views, text, 6).map((v) => ({ content: `ck:${v.ck}`, description: `<match>${xmlEsc(v.name)}</match>${v.year ? ` (${v.year})` : ''} <dim>· ${xmlEsc(STATUS_LABEL[v.status] || '')}</dim>` })));
+  } catch { suggest([]); }
+});
+chrome.omnibox?.onInputEntered.addListener((text) => {
+  const url = text.startsWith('ck:') ? appPage('serie/' + encodeURIComponent(text.slice(3))) : appPage(searchHash(text));
+  chrome.tabs.create({ url });
+});
+
 async function init() {
+  setupMenus();
   const p = await kv.get('activeProfile', 'default');
   setProfile(p);
   await openDb();
@@ -55,7 +105,11 @@ async function registerSiteScript() {
   if (!s.sc.origin) return;
   const ok = await chrome.permissions.contains({ origins: [originPattern(s.sc.origin)] });
   if (!ok) return;
-  await chrome.scripting.registerContentScripts([{ id: CONTENT_ID, matches: [originPattern(s.sc.origin)], js: ['src/content/site.js'], css: ['src/content/badges.css'], runAt: 'document_idle', persistAcrossSessions: true }]);
+  try { await chrome.scripting.unregisterContentScripts({ ids: [BRIDGE_ID] }); } catch { /* non registrato */ }
+  await chrome.scripting.registerContentScripts([
+    { id: BRIDGE_ID, matches: [originPattern(s.sc.origin)], js: ['src/content/bridge.js'], runAt: 'document_idle', world: 'MAIN', persistAcrossSessions: true },
+    { id: CONTENT_ID, matches: [originPattern(s.sc.origin)], js: ['src/content/site.js'], css: ['src/content/badges.css'], runAt: 'document_idle', persistAcrossSessions: true },
+  ]);
 }
 
 chrome.runtime.onInstalled.addListener(async (d) => {
@@ -93,7 +147,7 @@ chrome.alarms.onAlarm.addListener(async (a) => {
 });
 
 chrome.notifications?.onClicked.addListener((id) => {
-  const hash = id.startsWith('bm-q-') ? `/ricerca/${id.slice(5)}` : id === 'bm-missing' ? '/mancanti' : id === 'bm-update' ? '/impostazioni' : id === 'bm-backup' ? '/attivita' : '/scopri';
+  const hash = id.startsWith('bm-q-') ? `/ricerca/${id.slice(5)}` : id.startsWith('bm-t-') ? `/serie/${encodeURIComponent(id.slice(5))}` : id === 'bm-renewals' ? '/calendario' : id === 'bm-missing' ? '/mancanti' : id === 'bm-update' ? '/impostazioni' : id === 'bm-backup' ? '/attivita' : '/scopri';
   chrome.tabs.create({ url: chrome.runtime.getURL('src/ui/app.html#' + hash) });
 });
 
@@ -117,6 +171,19 @@ async function afterCatalogChange(snap) {
   // Titoli monitorati (F12): cambi di stagioni o ritorno nel catalogo.
   const changed = new Set([...(snap.seasonChanges || []), ...(snap.back || [])]);
   for (const v of views) if (v.monitor && v.cks.some((ck) => changed.has(ck)) && s.notifications) notify(`bm-t-${v.ck}`, `${v.name}: novità`, 'Il titolo che monitori è cambiato nel catalogo.');
+  // Rinnovi, conclusioni e cancellazioni delle serie che segui (funzione 3), dopo l'aggiornamento dei metadati.
+  if (snap.tmdb && s.notifications) {
+    const news = renewalAlerts(views, { since: snap.since || Date.now() - 3600000 });
+    for (const r of news.slice(0, 3)) notify(`bm-t-${r.ck}`, r.to === 'Canceled' ? 'Serie cancellata' : r.to === 'Ended' ? 'Serie conclusa' : 'Serie rinnovata', r.text);
+    if (news.length > 3) notify('bm-renewals', `${news.length} serie con novità`, 'Apri «In arrivo» per vederle tutte.');
+  }
+  // Persone che segui (funzione 7): serie nuove nel catalogo con loro, una notifica per serie.
+  if (s.notifications && (s.follows || []).length) {
+    const done = new Set(await kv.get('followNotified', []));
+    const fresh = views.filter((v) => v.followedPeople?.length && v.firstSeen && Date.now() - v.firstSeen < 7 * 86400000 && !done.has(v.ck) && !['completed', 'dropped'].includes(v.status));
+    for (const v of fresh.slice(0, 3)) notify(`bm-t-${v.ck}`, `Nuova serie con ${v.followedPeople[0]}`, `${v.name}${v.year ? ` (${v.year})` : ''} è arrivata nel catalogo.`);
+    if (fresh.length) await kv.set('followNotified', [...done, ...fresh.map((v) => v.ck)].slice(-500));
+  }
   const newCount = (snap.added || []).length;
   if (newCount || totalNew) await kv.set('badgeNew', (await kv.get('badgeNew', 0)) + newCount);
   await updateBadge();
@@ -130,8 +197,9 @@ async function updateBadge() {
 
 // Cache delle viste per i badge del sito (60 secondi).
 let viewCache = { at: 0, bySite: null, views: null };
-async function viewsBySite() {
-  if (viewCache.bySite && Date.now() - viewCache.at < 60000) return viewCache;
+async function viewsBySite(fresh = false) {
+  if (!fresh && viewCache.bySite && Date.now() - viewCache.at < 60000) return viewCache;
+  if (fresh && viewCache.bySite && Date.now() - viewCache.at < 5000) return viewCache;
   const { views } = await computeViews({ activeCatalog: 'all' });
   const bySite = new Map();
   for (const v of views) for (const ck of v.cks) if (ck.startsWith('sc:')) bySite.set(ck.slice(3), v);
@@ -141,6 +209,7 @@ async function viewsBySite() {
 function invalidate() { viewCache = { at: 0, bySite: null, views: null }; }
 
 const handlers = {
+  async 'app.version'() { return VERSION; },
   async 'ping'() { return { version: VERSION }; },
   async 'scan.start'({ kind, mode, opts }) { return scanner.startJob(kind, { ...(opts || {}), mode }); },
   async 'scan.pause'({ id }) { await scanner.pauseJob(id); return true; },
@@ -156,7 +225,11 @@ const handlers = {
     const u = new URL(url);
     const origin = u.origin;
     if (!(await chrome.permissions.contains({ origins: [originPattern(origin)] }))) throw new Error('Permesso per il sito non concesso');
-    const [{ result: html }] = await chrome.scripting.executeScript({ target: { tabId }, func: () => document.documentElement.outerHTML });
+    // Sul sito reale Vue toglie l'attributo data-page dopo l'avvio: in quel caso si rilegge l'HTML grezzo dello stesso indirizzo.
+    const [{ result: html }] = await chrome.scripting.executeScript({ target: { tabId }, func: async () => {
+      if (document.querySelector('[data-page]')) return document.documentElement.outerHTML;
+      try { const r = await fetch(location.href, { credentials: 'include' }); return await r.text(); } catch (e) { return document.documentElement.outerHTML; }
+    } });
     const fp = sc.fingerprint(html);
     if (!fp.ok) throw new Error(fp.reason + ' Apri la pagina dell\'archivio o della ricerca delle serie e riprova.');
     const seg = u.pathname.split('/').filter(Boolean);
@@ -196,7 +269,7 @@ const handlers = {
   },
   async 'overlay.set'({ ck, patch }) { await setOverlay(ck, patch); invalidate(); broadcast({ kind: 'data' }); return true; },
   async 'nextup.set'({ ck, on }) { await setNextUp(ck, on); invalidate(); broadcast({ kind: 'data' }); return true; },
-  async 'data.changed'() { invalidate(); return true; },
+  async 'data.changed'(_m, sender) { invalidate(); broadcast({ kind: 'data', from: sender?.url || null }); return true; },
   async 'open.detail'({ ck }) { await chrome.tabs.create({ url: chrome.runtime.getURL('src/ui/app.html#/serie/' + encodeURIComponent(ck)) }); return true; },
   async 'sync.now'({ interactive }) { return syncNow({ interactive: !!interactive }); },
   async 'update.check'() { return checkUpdate(); },

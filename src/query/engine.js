@@ -1,7 +1,7 @@
 // Motore di filtri: un albero JSON valutato su viste in memoria.
 // Nodo: {all:[...]} | {any:[...]} | {not: nodo} | condizione {field, any|all|none|range|min|max|eq|withinDays|q}
 import { normTitle } from '../match/normalize.js';
-import { lowerKey } from '../common/util.js';
+import { lowerKey, calendarDays, collator } from '../common/util.js';
 import { STATUS_LABEL } from '../library/status.js';
 import { genreLabel } from '../library/tags.js';
 
@@ -34,6 +34,19 @@ export const FIELDS = {
   hours: { label: 'Ore totali', group: 'TMDB', type: 'num', get: (v) => v.hours },
   endedNow: { label: 'Appena conclusa', group: 'TMDB', type: 'bool', get: (v) => v.endedNow },
   cast: { label: 'Attori e creatori', group: 'TMDB', type: 'set', get: (v) => [...v.cast, ...v.creators].map(lowerKey) },
+  keyword: { label: 'Parole chiave', group: 'TMDB', type: 'set', get: (v) => v.keywords || [] },
+  progress: { label: 'Progresso (%)', group: 'Personali', type: 'num', get: (v) => v.progress?.pct ?? null },
+  legal: { label: 'Dove guardarla legalmente', group: 'Catalogo', type: 'set', get: (v) => [...(v.legal || []), ...(v.siteProviders || [])] },
+  legalAny: { label: 'Disponibile legalmente', group: 'Catalogo', type: 'bool', get: (v) => !!((v.legal && v.legal.length) || (v.siteProviders && v.siteProviders.length)) },
+  onMyService: { label: 'Nei tuoi abbonamenti', group: 'Catalogo', type: 'bool', get: (v) => !!v.onMyService },
+  statusChanged: { label: 'Rinnovata, conclusa o cancellata da poco', group: 'TMDB', type: 'bool', get: (v) => !!v.statusChange },
+  airing: { label: 'Episodio in arrivo', group: 'TMDB', type: 'bool', get: (v) => !!v.nextAir?.date },
+  openEnding: { label: 'Cancellata senza finale', group: 'TMDB', type: 'bool', get: (v) => !!v.openEnding },
+  closedWell: { label: 'Chiusa bene (conclusa, non cancellata)', group: 'TMDB', type: 'bool', get: (v) => v.tmdbStatus === 'Ended' },
+  missingSeasons: { label: 'Stagioni mancanti nel catalogo', group: 'Catalogo', type: 'bool', get: (v) => !!v.missingSeasons },
+  followed: { label: 'Con persone che segui', group: 'Personali', type: 'bool', get: (v) => !!v.followedPeople?.length },
+  anime: { label: 'Anime', group: 'Catalogo', type: 'bool', get: (v) => !!v.anime },
+  dubIta: { label: 'Doppiata in italiano', group: 'Catalogo', type: 'bool', get: (v) => v.dubIta },
   matchConfidence: { label: 'Confidenza match', group: 'Sistema', type: 'num', get: (v) => v.matchConfidence },
   conflict: { label: 'Stati in conflitto', group: 'Sistema', type: 'bool', get: (v) => v.conflict },
   partial: { label: 'Dati parziali', group: 'Sistema', type: 'bool', get: (v) => v.partial },
@@ -71,6 +84,7 @@ export function evalCond(c, v, now = Date.now()) {
       return true;
     }
     case 'num': {
+      if (c.missing) return val == null;
       const lo = c.range ? c.range[0] : c.min; const hi = c.range ? c.range[1] : c.max;
       if (lo == null && hi == null) return true;
       if (val == null) return null;
@@ -85,7 +99,7 @@ export function evalCond(c, v, now = Date.now()) {
     case 'date': {
       if (c.withinDays == null) return true;
       if (!val) return null;
-      return now - val <= c.withinDays * DAY;
+      return calendarDays(val, now) <= c.withinDays;
     }
     default: return true;
   }
@@ -159,7 +173,7 @@ export const SORTS = {
   added: { label: 'Aggiunte di recente', fn: (a, b) => (b.firstSeen ?? 0) - (a.firstSeen ?? 0) },
   yearDesc: { label: 'Anno (recenti)', fn: (a, b) => (b.year ?? 0) - (a.year ?? 0) },
   yearAsc: { label: 'Anno (vecchie)', fn: (a, b) => (a.year ?? 9999) - (b.year ?? 9999) },
-  name: { label: 'Titolo A–Z', fn: (a, b) => a.norm.localeCompare(b.norm) },
+  name: { label: 'Titolo A–Z', fn: (a, b) => collator.compare(a.name, b.name) },
   seasons: { label: 'Meno stagioni', fn: (a, b) => (a.seasons ?? 99) - (b.seasons ?? 99) },
   hours: { label: 'Più brevi', fn: (a, b) => (a.hours ?? 1e9) - (b.hours ?? 1e9) },
   popularity: { label: 'Popolarità TMDB', fn: (a, b) => (b.popularity ?? -1) - (a.popularity ?? -1) },
@@ -167,7 +181,7 @@ export const SORTS = {
 
 export function sortViews(list, key = 'score') {
   const s = SORTS[key] || SORTS.score;
-  return [...list].sort((a, b) => s.fn(a, b) || a.norm.localeCompare(b.norm));
+  return [...list].sort((a, b) => s.fn(a, b) || collator.compare(a.name, b.name));
 }
 
 // Frase leggibile della query (costruttore di filtri, ricerche salvate).
@@ -201,6 +215,7 @@ export function describeCond(c) {
     return out.join(', ');
   }
   if (def.type === 'num') {
+    if (c.missing) return `${L} non nota`;
     const lo = c.range ? c.range[0] : c.min; const hi = c.range ? c.range[1] : c.max;
     if (lo != null && hi != null) return `${L} tra ${lo} e ${hi}`;
     if (lo != null) return `${L} almeno ${lo}`;

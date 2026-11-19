@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "date": "2026-11-19",
-  "zip": "BingeMap-1.0.0.zip",
-  "notes": "Prima versione: catalogo, import, matching, scoperta, filtri, sincronizzazione Google Drive, catalogo legale, app web."
+  "version": "1.2.0",
+  "date": "2026-11-20",
+  "zip": "BingeMap-1.2.0.zip",
+  "notes": "Esplora: universi e spin-off, grandi classici, giro del mondo, linea del tempo, persone che segui, anime della stagione. Avvisi: cancellate senza finale, stagioni mancanti nel catalogo, quasi finite, prova il pilota. Import AniList e MyAnimeList. Esporta verso altre app (IMDb, CSV completo, MyAnimeList). Alto contrasto e testo più grande."
 }

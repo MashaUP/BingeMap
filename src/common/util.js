@@ -28,7 +28,8 @@ export function hash(str) {
 }
 
 export function stripAccents(s) {
-  return String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '');
+  // Solo i diacritici latini; NFC alla fine ricompone hangul, kana e gli altri sistemi di scrittura.
+  return String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').normalize('NFC');
 }
 
 export function lowerKey(s) {
@@ -51,6 +52,17 @@ export function fmtDate(ts, withTime = false) {
   if (withTime) Object.assign(opts, { hour: '2-digit', minute: '2-digit' });
   return d.toLocaleString('it-IT', opts);
 }
+
+// Giorni di calendario (ora locale) tra due istanti: non sbaglia a cavallo del cambio dell'ora legale.
+export function calendarDays(from, to = Date.now()) {
+  const a = new Date(from); const b = new Date(to);
+  const da = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const db = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((db - da) / 86400000);
+}
+
+// Collazione italiana per gli ordinamenti A–Z (À, È, ecc. al posto giusto).
+export const collator = new Intl.Collator('it', { sensitivity: 'base', numeric: true });
 
 export function daysBetween(a, b = Date.now()) {
   return Math.floor((b - a) / 86400000);
@@ -127,3 +139,7 @@ export function seededRandom(seed) {
     return s / 4294967296;
   };
 }
+
+// Nomi dei servizi a confronto: «Disney Plus» = «Disney+», «Apple TV+» ≈ «Apple TV Plus», «Amazon Prime Video» ≈ «Prime Video».
+export function provKey(name) { return String(name || '').toLowerCase().replace(/\+/g, 'plus').replace(/amazon/g, '').replace(/[^a-z0-9]/g, ''); }
+export function sameProvider(a, b) { const x = provKey(a); const y = provKey(b); return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x)); }

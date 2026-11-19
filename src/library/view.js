@@ -3,13 +3,15 @@
 import { effectiveStatus } from './status.js';
 import { splitGenre, genreLabel, aliasName, computedTags, applyTagRules } from './tags.js';
 import { normTitle } from '../match/normalize.js';
-import { lowerKey } from '../common/util.js';
+import { lowerKey, sameProvider } from '../common/util.js';
+import { computeProgress } from './progress.js';
 
 const DAY = 86400000;
 
 export function buildViews(data, settings) {
   const { catalog = [], items = [], matches = [], overlay = [], aliases = [], tagRules = [], tmdbCache = [], batches = [] } = data;
   const activeCatalog = settings.activeCatalog || 'all';
+  const follows = new Set((settings.follows || []).map((f) => lowerKey(f.name || f)));
   const aliasMap = new Map(aliases.map((a) => [a.key, a.name]));
   const ovMap = new Map(overlay.map((o) => [o.ck, o]));
   const tmdbMap = new Map(tmdbCache.map((t) => [t.tmdbId, t]));
@@ -61,7 +63,7 @@ export function buildViews(data, settings) {
 
     const impTags = {};
     const lists = new Set();
-    let impRating = null; let seasonsWatched = null; let lastActivity = null;
+    let impRating = null; let seasonsWatched = null; let lastActivity = null; let importedEpisodes = null;
     for (const { item } of linked) {
       if (item.tags?.length) {
         impTags[item.source] = impTags[item.source] || [];
@@ -73,12 +75,14 @@ export function buildViews(data, settings) {
       for (const l of item.lists || []) lists.add(`${item.source}:${l}`);
       if (item.rating != null) impRating = Math.max(impRating ?? 0, item.rating);
       if (item.seasonsWatched != null) seasonsWatched = Math.max(seasonsWatched ?? 0, item.seasonsWatched);
+      if (item.episodesWatched != null) importedEpisodes = Math.max(importedEpisodes ?? 0, item.episodesWatched);
       const la = item.lastActivity || item.updatedAt;
       if (la) lastActivity = Math.max(lastActivity ?? 0, la);
     }
 
     const seasons = c.seasonsCount ?? tm?.seasons ?? null;
-    const episodes = tm?.episodes ?? null;
+    const episodes = tm?.episodes ?? c.episodesCount ?? null;
+    const seasonEps = tm?.seasonEpisodes?.length ? tm.seasonEpisodes : (c.seasonEpisodes || []);
     const epRuntime = tm?.epRuntime ?? c.duration ?? null;
     const hours = episodes && epRuntime ? Math.round((episodes * epRuntime) / 6) / 10 : null;
     const base = {
@@ -102,6 +106,21 @@ export function buildViews(data, settings) {
     // Idea 23: riprendi o lascia.
     const stalled = (status === 'watching' || status === 'hold') && lastActivity != null && now - lastActivity > (settings.stalledDays || 60) * DAY;
 
+    const progress = computeProgress({ status, seasons: seasonEps, total: episodes, epRuntime: tm?.epRuntime ?? c.duration ?? null, override: ov?.progress || null, importedEpisodes });
+    // Rinnovi e cancellazioni (funzione 3): ultimo cambio di stato TMDB negli ultimi 30 giorni.
+    const sh = tm?.statusHistory || [];
+    const lastSh = sh[sh.length - 1]; const prevSh = sh[sh.length - 2];
+    const statusChange = lastSh && prevSh && prevSh.status && lastSh.status !== prevSh.status && now - lastSh.date < 30 * DAY ? { from: prevSh.status, to: lastSh.status, date: lastSh.date } : null;
+    const w = tm?.watch || null;
+    const legal = w ? [...new Set([...w.flatrate, ...w.free].map((p) => p.name))] : [];
+    // Cancellate senza finale (funzione 1) e stagioni mancanti nel catalogo (funzione 6).
+    const openEnding = tm?.status === 'Canceled' ? { seasons: tm.seasons ?? seasons } : null;
+    const today = new Date().toISOString().slice(0, 10);
+    const aired = tm?.seasonEpisodes?.length ? tm.seasonEpisodes.filter((x) => x.date && x.date <= today).length : (tm?.status === 'Ended' || tm?.status === 'Canceled' ? tm?.seasons ?? null : null);
+    const siteSeasons = list.find((x) => x.source === 'sc')?.seasonsCount ?? null;
+    const missingSeasons = siteSeasons != null && aired != null && aired > siteSeasons ? { site: siteSeasons, aired } : null;
+    const people = [...new Set([...(tm?.cast?.length ? tm.cast : (c.cast || [])), ...(tm?.creators?.length ? tm.creators : (c.creators || []))])];
+    const followedPeople = follows.size ? people.filter((n) => follows.has(lowerKey(n))) : [];
     const matchBest = linked.reduce((m, { m: mm }) => (mm.confidence > (m?.confidence ?? -1) ? mm : m), null);
     views.push({
       ck: c.ck, cks, catalogs: [...new Set(list.map((x) => x.source))], providers: [...new Set(list.flatMap((x) => x.providers || []))],
@@ -116,7 +135,14 @@ export function buildViews(data, settings) {
       recs: c.recommendations || [], tmdbRecs: tm?.recommendations || [],
       country: tm?.countries || [], lang: tm?.originalLanguage || null, tmdbStatus: tm?.status || null,
       episodes, epRuntime, hours, complete: seasons != null && tm?.seasons != null ? seasons >= tm.seasons : null,
-      popularity: tm?.popularity ?? null, cast: tm?.cast || [], creators: tm?.creators || [],
+      popularity: tm?.popularity ?? null, cast: tm?.cast?.length ? tm.cast : (c.cast || []), creators: tm?.creators?.length ? tm.creators : (c.creators || []),
+      keywords: [...new Set([...(c.keywords || []), ...(tm?.keywords || [])].map(lowerKey))],
+      seasonEpisodes: seasonEps, progress, nextAir: tm?.nextEp || null, lastAir: tm?.lastEp || null,
+      watch: w, legal, legalAll: w ? [...new Set([...w.flatrate, ...w.free, ...w.rent, ...w.buy].map((p) => p.name))] : [], siteProviders: [...new Set(list.flatMap((x) => x.providerIds || []))],
+      tmdbId: c.tmdbId ?? null, imdbId: c.imdbId ?? tm?.imdbId ?? null,
+      statusChange, dubIta: c.dubIta ?? null, openEnding, missingSeasons, followedPeople, voteCount: tm?.voteCount ?? null, siteSeasons,
+      anime: linked.some(({ item }) => item.source === 'anilist' || item.source === 'mal') || (tm?.originalLanguage === 'ja' && [...genres].includes('animation')),
+      onMyService: !!(settings.myServices?.length && [...legal, ...list.flatMap((x) => x.providerIds || [])].some((n) => settings.myServices.some((m) => sameProvider(n, m)))),
       status, statusFrom: pending ? 'pending' : eff.from, conflict: eff.conflict, pendingMatch: pending,
       statusBySource: Object.fromEntries(linked.map(({ item }) => [item.source, item.status])),
       impTags, userTags, computedTags: comp, ruleTags, tags: [...allTags],

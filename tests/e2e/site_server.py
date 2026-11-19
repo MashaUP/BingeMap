@@ -1,4 +1,5 @@
-"""Sito simulato del catalogo per i test end-to-end (struttura come descritta in docs/SITE_NOTES.md)."""
+"""Sito simulato del catalogo per i test end-to-end, con la struttura verificata sul sito reale (docs/SITE_NOTES.md):
+HTML con data-page che Vue toglie dopo l'avvio, elenco JSON paginato in stile Laravel con intestazioni XHR, schede con slider «related»."""
 import html
 import json
 import re
@@ -20,7 +21,9 @@ TITLES = []
 for (i, name, year, tmdb, imdb, genres, seasons) in KNOWN:
     TITLES.append({"id": i, "slug": re.sub(r"\W+", "-", name.lower()).strip("-"), "name": name, "type": "tv", "score": "8.5",
                    "sub_ita": 1 if i == 6 else 0, "seasons_count": seasons, "last_air_date": f"{year}-06-01", "release_date": f"{year}-01-01",
-                   "_detail": {"tmdb_id": tmdb, "imdb_id": imdb, "genres": [{"name": g} for g in genres], "plot": f"Trama di {name}."},
+                   "_detail": {"tmdb_id": tmdb, "imdb_id": imdb, "genres": [{"name": g} for g in genres], "plot": f"Trama di {name}.",
+                               "seasons": [{"number": s + 1, "episodes_count": 8} for s in range(seasons)], "keywords": [{"name": "time travel"}, {"name": "dystopia"}] if i in (1, 2, 6) else [{"name": "family"}],
+                               "main_actors": [{"name": f"Attore {i}"}], "netflix_id": 80100172 if i == 1 else None, "dub_ita": 1},
                    "images": [{"type": "poster", "url": f"/img/{i}.svg"}]})
 for n in range(8, 131):
     TITLES.append({"id": n, "slug": f"serie-{n}", "name": f"Serie di prova {n}", "type": "tv", "score": str(5 + (n % 5)), "sub_ita": 0,
@@ -36,9 +39,13 @@ def public(t, detail=False):
     return d
 
 
+# Come sul sito reale: dopo l'avvio l'app sposta i dati in __vue_app__ e toglie l'attributo data-page.
+MOUNT = "<script>(function(){var a=document.getElementById('app');var d=JSON.parse(a.getAttribute('data-page'));a.__vue_app__={config:{globalProperties:{$page:d}}};a.removeAttribute('data-page');})();</script>"
+
+
 def page(component, props, cards=""):
     data = html.escape(json.dumps({"component": component, "props": props, "url": "/", "version": "x"}), quote=True)
-    return f'<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Catalogo</title></head><body><header><a href="/it/titles/1-dark">Menu Dark</a></header><div id="app" data-page="{data}"><main>{cards}</main></div></body></html>'
+    return f'<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Catalogo</title></head><body><header><a href="/it/titles/1-dark">Menu Dark</a></header><div id="app" data-page="{data}"><main>{cards}</main></div>{MOUNT}</body></html>'
 
 
 def cards(ts):
@@ -63,15 +70,23 @@ class H(BaseHTTPRequestHandler):
         if u.path.startswith("/api/"):
             return self.send(404, "not found", "text/plain")
         if u.path in ("/it/archive", "/it/archivio"):
-            off = int(q.get("offset", ["0"])[0])
-            chunk = TITLES[off:off + 60]
-            return self.send(200, page("Archive", {"titles": [public(t) for t in chunk], "total": len(TITLES)}, cards(chunk)))
+            pool = [t for t in TITLES if q.get("type", [""])[0] in ("", t["type"])]
+            if self.headers.get("X-Requested-With") == "XMLHttpRequest":
+                n = max(1, int(q.get("page", ["1"])[0]))
+                chunk = pool[(n - 1) * 60:n * 60]
+                last = (len(pool) + 59) // 60
+                body = {"current_page": n, "data": [public(t) for t in chunk], "last_page": last, "per_page": 60,
+                        "from": (n - 1) * 60 + 1 if chunk else None, "to": (n - 1) * 60 + len(chunk) if chunk else None, "total": len(pool)}
+                return self.send(200, json.dumps(body), "application/json")
+            chunk = pool[:60]  # l'HTML mostra sempre la prima pagina (offset e page ignorati)
+            return self.send(200, page("Titles/Browse", {"titles": [public(t) for t in chunk], "totalCount": len(pool), "browseMoreApiRoute": "/it/archive"}, cards(chunk)))
         m = re.match(r"^/it/titles/(\d+)", u.path)
         if m:
             t = next((x for x in TITLES if x["id"] == int(m.group(1))), None)
             if not t:
                 return self.send(404, "no")
-            return self.send(200, page("Titles/Title", {"title": public(t, True)}))
+            related = [public(x) for x in TITLES if x["id"] in (2, 6, 7) and x["id"] != t["id"]]
+            return self.send(200, page("Titles/Title", {"title": public(t, True), "sliders": [{"name": "related", "titles": related}, {"name": "genre", "titles": []}]}))
         m = re.match(r"^/img/(\d+)\.svg$", u.path)
         if m:
             return self.send(200, f'<svg xmlns="http://www.w3.org/2000/svg" width="160" height="240"><rect width="160" height="240" fill="#2B2A55"/><text x="10" y="120" fill="#fff">{m.group(1)}</text></svg>', "image/svg+xml")

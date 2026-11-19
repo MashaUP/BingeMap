@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "BingeMap",
   "short_name": "BingeMap",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Trova le serie del catalogo che non hai ancora visto, incrociandole con le tue liste, i tuoi tag e i tuoi voti.",
   "icons": {
     "16": "assets/icons/icon16.png",
@@ -31,7 +31,8 @@
     "notifications",
     "activeTab",
     "scripting",
-    "identity"
+    "identity",
+    "contextMenus"
   ],
   "host_permissions": [
     "https://api.themoviedb.org/*",
@@ -46,9 +47,17 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/content/badges.css"],
-      "matches": ["https://*/*", "http://*/*"]
+      "resources": [
+        "src/content/badges.css"
+      ],
+      "matches": [
+        "https://*/*",
+        "http://*/*"
+      ]
     }
   ],
-  "minimum_chrome_version": "116"
+  "minimum_chrome_version": "116",
+  "omnibox": {
+    "keyword": "bm"
+  }
 }

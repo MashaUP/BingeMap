@@ -90,8 +90,10 @@ async function checkCtl(job, ctl) {
   return null;
 }
 
-async function fetchText(url) {
-  const r = await hooks.fetch(url, { credentials: 'include', redirect: 'follow', cache: 'no-store' });
+async function fetchText(url, json = false) {
+  const opts = { credentials: 'include', redirect: 'follow', cache: 'no-store' };
+  if (json) opts.headers = sc.JSON_HEADERS;
+  const r = await hooks.fetch(url, opts);
   const body = await r.text();
   return { status: r.status, ok: r.ok, body, type: r.headers.get('content-type') || '' };
 }
@@ -118,7 +120,7 @@ async function runScList(job, ctl, settings) {
     if (c === 'stop') break;
     const url = sc.listUrl(settings, job.cursor.page, job.strategy);
     let res;
-    try { res = await fetchText(url); } catch (e) {
+    try { res = await fetchText(url, job.strategy === 'api'); } catch (e) {
       job.errors++; note(job, `Rete non raggiungibile (${e.message}). Il sito potrebbe aver cambiato indirizzo.`);
       job.status = 'error'; job.error = 'Il sito non risponde: se ha cambiato indirizzo, apri il nuovo e ripeti «Usa questa scheda».';
       break;
@@ -137,6 +139,7 @@ async function runScList(job, ctl, settings) {
     note(job, `Pagina ${job.pagesDone}: ${fresh.length} serie`);
     await saveJob(job);
     if (parsed.titles.length === 0 || fresh.length === 0) { emptyOrShort = true; break; }
+    if (parsed.page && parsed.lastPage && parsed.page >= parsed.lastPage) { emptyOrShort = true; break; }
     if (job.totalReported && seen.size >= job.totalReported) { emptyOrShort = true; break; }
     if (job.cursor.page > 2000) { note(job, 'Limite di sicurezza di 2000 pagine raggiunto'); break; }
     await hooks.sleep(Math.max(800, settings.sc.delayMs));
@@ -156,8 +159,9 @@ export async function detectStrategy(settings) {
   const pref = settings.sc.strategy;
   const tryOne = async (s) => {
     try {
-      const r = await fetchText(sc.listUrl(settings, 0, s));
+      const r = await fetchText(sc.listUrl(settings, 0, s), s === 'api');
       if (sc.blockedReason(r.status, r.body)) return false;
+      if (s === 'api' && !(/json/.test(r.type) || /^\s*[{[]/.test(r.body))) return false;
       const p = sc.parseList(r.body, r.type);
       return r.ok && p.ok && p.titles.length > 0;
     } catch { return false; }
@@ -258,8 +262,9 @@ async function runTmdbEnrich(job, ctl, settings) {
   if (!settings.tmdbKey) throw new Error('Inserisci la tua chiave TMDB nelle impostazioni');
   const catalog = (await getAll('catalog_titles')).filter((c) => c.status !== 'gone');
   const cache = new Map((await getAll('tmdb_cache')).map((t) => [t.tmdbId, t]));
-  const stale = 30 * 86400000;
-  const todo = catalog.filter((c) => (c.tmdbId && (!cache.has(c.tmdbId) || job.opts.force || Date.now() - cache.get(c.tmdbId).updatedAt > stale)) || (!c.tmdbId && c.imdbId && !c.tmdbLookupAt));
+  // Le serie ancora in onda si aggiornano più spesso (calendario, rinnovi, cancellazioni).
+  const staleFor = (t) => (t && (t.status === 'Returning Series' || t.status === 'In Production' || t.nextEp) ? 3 : 30) * 86400000;
+  const todo = catalog.filter((c) => (c.tmdbId && (!cache.has(c.tmdbId) || job.opts.force || Date.now() - cache.get(c.tmdbId).updatedAt > staleFor(cache.get(c.tmdbId)))) || (!c.tmdbId && c.imdbId && !c.tmdbLookupAt));
   const unique = []; const seenIds = new Set();
   for (const c of todo) { const k = c.tmdbId || c.imdbId; if (!seenIds.has(k)) { seenIds.add(k); unique.push(c); } }
   job.todo = unique.length;
@@ -290,7 +295,7 @@ async function runTmdbEnrich(job, ctl, settings) {
   note(job, `Metadati aggiornati: ${job.done}/${job.todo}`);
   await saveJob(job);
   await runMatching();
-  try { await hooks.afterPromote({ added: [], removed: [], seasonChanges: [], tmdb: true }, job); } catch { /* ignora */ }
+  try { await hooks.afterPromote({ added: [], removed: [], seasonChanges: [], tmdb: true, since: job.startedAt }, job); } catch { /* ignora */ }
 }
 
 // --- Catalogo legale dai fornitori scelti

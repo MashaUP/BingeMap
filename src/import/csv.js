@@ -1,5 +1,28 @@
 // Lettore CSV (RFC 4180) con rilevamento del separatore e del BOM.
 
+// Da byte a testo: UTF-8 (con o senza BOM), UTF-16 LE/BE con BOM (Excel «Testo Unicode»), altrimenti Windows-1252
+// (Excel italiano «CSV (delimitato dal separatore di elenco)»).
+export function decodeBytes(bytes) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) return new TextDecoder('utf-8').decode(b.subarray(3));
+  if (b[0] === 0xff && b[1] === 0xfe) return new TextDecoder('utf-16le').decode(b.subarray(2));
+  if (b[0] === 0xfe && b[1] === 0xff) return new TextDecoder('utf-16be').decode(b.subarray(2));
+  // UTF-16 senza BOM: molti zeri nelle posizioni dispari o pari.
+  if (b.length >= 4) {
+    let odd = 0; let even = 0; const n = Math.min(b.length, 400);
+    for (let i = 0; i < n; i++) if (b[i] === 0) { if (i % 2) odd++; else even++; }
+    if (odd > n / 4) return new TextDecoder('utf-16le').decode(b);
+    if (even > n / 4) return new TextDecoder('utf-16be').decode(b);
+  }
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(b); } catch { return new TextDecoder('windows-1252').decode(b); }
+}
+
+export async function decodeFile(f) {
+  if (typeof f.arrayBuffer === 'function') return decodeBytes(new Uint8Array(await f.arrayBuffer()));
+  if (typeof f.bytes === 'function') return decodeBytes(await f.bytes());
+  return f.text();
+}
+
 export function detectDelimiter(text) {
   const first = text.split(/\r?\n/).slice(0, 5).join('\n');
   const cands = [',', ';', '\t', '|'];

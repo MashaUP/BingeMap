@@ -9,10 +9,10 @@ export const DEFAULTS = {
     origin: '',
     lang: 'it',
     strategy: 'auto', // auto | api | page
-    apiPath: '/api/archive',
+    apiPath: '/{lang}/archive', // elenco JSON paginato (intestazioni XHR); {lang} = lingua del sito
     archivePath: '/archive',
     typeParam: 'type=tv',
-    pageParam: 'offset', // offset | page
+    pageParam: 'page', // page | offset
     pageSize: 60,
     titlePath: '/titles',
     delayMs: 1500,
@@ -35,7 +35,29 @@ export const DEFAULTS = {
   hideCompletedOnSite: false,
   badgesOnSite: true,
   stalledDays: 60,
+  spoilerFree: false,
+  myServices: [], // nomi dei fornitori legali a cui sei abbonato
+  hoursPerWeek: 6,
+  lang: 'it', // it | en (interfaccia)
+  follows: [], // persone seguite: [{ name, kind: 'cast'|'creator', at }]
+  contrast: 'normal', // normal | high
+  textScale: 100, // 100 | 115 | 130
+  anilistUser: '',
+  settingsRev: 2,
 };
+
+// Impostazioni salvate da versioni precedenti: valori predefiniti superati che vanno aggiornati.
+function migrate(stored) {
+  if (!stored || typeof stored !== 'object') return stored;
+  const out = { ...stored };
+  if ((out.settingsRev || 1) < 2 && out.sc) {
+    out.sc = { ...out.sc };
+    if (out.sc.apiPath === '/api/archive') out.sc.apiPath = '/{lang}/archive';
+    if (out.sc.pageParam === 'offset') out.sc.pageParam = 'page';
+    out.settingsRev = 2;
+  }
+  return out;
+}
 
 function merge(base, over) {
   if (!over || typeof over !== 'object') return structuredClone(base);
@@ -49,7 +71,7 @@ function merge(base, over) {
 }
 
 export async function loadSettings() {
-  return merge(DEFAULTS, await getSetting('app', {}));
+  return merge(DEFAULTS, migrate(await getSetting('app', {})));
 }
 
 export async function saveSettings(patch) {
@@ -59,4 +81,4 @@ export async function saveSettings(patch) {
   return next;
 }
 
-export { merge as mergeSettings };
+export { merge as mergeSettings, migrate as migrateSettings };

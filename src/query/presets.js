@@ -18,6 +18,16 @@ export function presets(opts = {}) {
     { id: 'p-newseason', name: 'Nuove stagioni', icon: 'refresh', color: '#60A5FA', query: { all: [{ field: 'newSeason', eq: true }] } },
     { id: 'p-endednow', name: 'Ora è conclusa', icon: 'check', color: '#2DD4BF', query: { all: [{ field: 'endedNow', eq: true }] } },
     { id: 'p-stalled', name: 'Riprendi o lascia', icon: 'clock', color: '#FB923C', query: { all: [{ field: 'stalled', eq: true }] } },
+    { id: 'p-almost', name: 'Quasi finite', icon: 'check', color: '#2DD4BF', query: { all: [{ field: 'status', any: ['watching', 'hold'] }, { field: 'progress', range: [80, 99] }] } },
+    { id: 'p-pilot', name: 'Prova il pilota', icon: 'play', color: '#A68CFF', query: { all: [{ field: 'status', any: ['none', 'plan', 'unknown'] }, { field: 'notInterested', eq: false }, { field: 'score', min: 7 }, { any: [{ field: 'epRuntime', max: 60 }, { field: 'epRuntime', missing: true }] }] } },
+    { id: 'p-closed', name: 'Chiuse bene', icon: 'check', color: '#60A5FA', query: { all: [d, { field: 'closedWell', eq: true }, { not: { field: 'openEnding', eq: true } }] } },
+    { id: 'p-open', name: 'Cancellate senza finale', icon: 'alert', color: '#F87171', query: { all: [{ field: 'openEnding', eq: true }] } },
+    { id: 'p-missing-seasons', name: 'Stagioni mancanti nel catalogo', icon: 'alert', color: '#FB923C', query: { all: [{ field: 'missingSeasons', eq: true }, { field: 'status', none: ['dropped'] }] } },
+    { id: 'p-followed', name: 'Con persone che segui', icon: 'users', color: '#A68CFF', query: { all: [d, { field: 'followed', eq: true }] } },
+    { id: 'p-dub', name: 'Doppiate in italiano', icon: 'chat', color: '#2DD4BF', query: { all: [d, { field: 'dubIta', eq: true }] } },
+    { id: 'p-legal', name: 'Nei tuoi abbonamenti', icon: 'check', color: '#2DD4BF', query: { all: [d, { field: 'onMyService', eq: true }] } },
+    { id: 'p-airing', name: 'Episodi in arrivo', icon: 'calendar', color: '#60A5FA', query: { all: [{ field: 'airing', eq: true }, { field: 'status', any: ['watching', 'hold', 'plan'] }] } },
+    { id: 'p-renewal', name: 'Rinnovate o cancellate da poco', icon: 'refresh', color: '#FB923C', query: { all: [{ field: 'statusChanged', eq: true }] } },
     { id: 'p-complete', name: 'Complete nel catalogo', icon: 'check', color: '#2DD4BF', query: { all: [d, { field: 'complete', eq: true }, { field: 'tmdbStatus', any: ['Ended'] }] } },
   ];
 }

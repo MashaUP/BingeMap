@@ -44,3 +44,8 @@ export const UPDATE_STEPS = [
   'Apri brave://extensions o chrome://extensions e premi «Ricarica» su BingeMap.',
   'Ricarica le schede di BingeMap aperte. I tuoi dati restano dove sono.',
 ];
+
+// Pagina aperta con il codice di prima di un aggiornamento: la versione del service worker è diversa da quella della pagina.
+export function needsReload(pageVersion, workerVersion) {
+  return !!workerVersion && !!pageVersion && compareVersions(workerVersion, pageVersion) !== 0;
+}

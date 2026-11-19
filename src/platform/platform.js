@@ -103,10 +103,15 @@ export async function notify(id, title, message) {
 // --- OAuth: URL di ritorno e flusso nel browser
 export function redirectUrl(path) {
   if (isExtension && g.chrome.identity) return g.chrome.identity.getRedirectURL(path);
-  return new URL('oauth.html', g.location.href).href;
+  return new URL('oauth.html', g.location?.href || 'http://localhost/').href;
 }
 
+// Solo per i test automatici: sostituisce la finestra di accesso con una funzione (url → url di ritorno).
+let authOverride = null;
+export function setAuthFlowForTests(fn) { authOverride = fn; }
+
 export async function authFlow(url) {
+  if (authOverride) return authOverride(url);
   if (isExtension && g.chrome.identity) {
     return g.chrome.identity.launchWebAuthFlow({ url, interactive: true });
   }

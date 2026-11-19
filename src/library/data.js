@@ -1,10 +1,11 @@
 // Accesso ai dati per interfaccia e service worker: carica tutto, costruisce le viste, scrive lo strato personale.
 import { getAll, get, put, del, atomic } from '../db/db.js';
-import { loadSettings } from '../common/settings.js';
+import { loadSettings, saveSettings } from '../common/settings.js';
 import { buildViews } from './view.js';
 import { runQuery } from '../query/engine.js';
-import { uid } from '../common/util.js';
+import { uid, lowerKey } from '../common/util.js';
 import { recordTombstone } from '../sync/drive.js';
+import { pushUndo } from './undo.js';
 
 export async function loadAll() {
   const [catalog, items, matches, overlay, aliases, tagRules, tmdbCache, batches, settings] = await Promise.all([
@@ -22,9 +23,10 @@ export async function computeViews(settingsOverride = null) {
 
 // --- Strato personale (F46, F47, idee 9, 10, 11, 27)
 export async function setOverlay(ck, patch, event = null) {
-  let out;
+  let out; let before = null;
   await atomic(['overlay', 'diary'], async (tx) => {
-    const cur = (await tx.get('overlay', ck)) || { ck, tags: [] };
+    before = (await tx.get('overlay', ck)) || null;
+    const cur = before ? { ...before } : { ck, tags: [] };
     const prevStatus = cur.status;
     out = { ...cur, ...patch, ck, updatedAt: Date.now() };
     for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
@@ -34,7 +36,17 @@ export async function setOverlay(ck, patch, event = null) {
       tx.put('diary', { id: uid('d_'), ck, date: Date.now(), event: patch.status === 'watching' ? 'started' : 'completed', fromQuery: event?.fromQuery || null, updatedAt: Date.now() });
     }
   });
+  if (event?.undo !== false) pushUndo(event?.label || 'Modifica', [{ store: 'overlay', key: ck, prev: before }]);
   return out;
+}
+
+// Progresso per episodio (funzione 1): S/E a cui sei arrivato. Primo episodio visto → In corso; ultimo → Completata.
+export async function setProgress(ck, s, e, { total = null, seen = null } = {}) {
+  const patch = { progress: s == null ? null : { s, e, at: Date.now() } };
+  const cur = await get('overlay', ck);
+  if (s != null && !cur?.status) patch.status = 'watching';
+  if (total != null && seen != null && seen >= total) patch.status = 'completed';
+  return setOverlay(ck, patch, { label: 'Progresso' });
 }
 
 export async function getOverlay(ck) { return get('overlay', ck); }
@@ -110,3 +122,14 @@ export async function setAlias(source, name, canonical) {
 }
 export async function addTagRule(rule) { const r = { id: uid('r_'), ...rule, updatedAt: Date.now() }; await put('tag_rules', r); return r; }
 export async function deleteTagRule(id) { await del('tag_rules', id); await recordTombstone('tag_rules', id); }
+
+// Persone seguite (funzione 7): attori e autori. Salvate nelle impostazioni (viaggiano con backup e sincronizzazione).
+export async function toggleFollow(name, kind = 'cast') {
+  const s = await loadSettings();
+  const key = lowerKey(name);
+  const cur = s.follows || [];
+  const on = !cur.some((f) => lowerKey(f.name) === key);
+  const follows = on ? [...cur, { name, kind, at: Date.now() }] : cur.filter((f) => lowerKey(f.name) !== key);
+  await saveSettings({ follows });
+  return on;
+}

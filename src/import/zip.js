@@ -1,4 +1,5 @@
 // Lettura e scrittura ZIP minime, senza dipendenze (DecompressionStream / CompressionStream del browser).
+import { decodeBytes } from './csv.js';
 
 async function inflateRaw(bytes) {
   const ds = new DecompressionStream('deflate-raw');
@@ -38,7 +39,7 @@ export async function readZip(buffer) {
     files.push({
       name,
       async bytes() { return method === 0 ? data : method === 8 ? inflateRaw(data) : Promise.reject(new Error('Compressione non supportata')); },
-      async text() { return new TextDecoder().decode(await this.bytes()); },
+      async text() { return decodeBytes(await this.bytes()); },
     });
   }
   return files;
