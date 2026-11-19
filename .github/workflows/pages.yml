@@ -1,0 +1,39 @@
+name: App web (GitHub Pages)
+
+# Pubblica l'app web (PWA) con lo stesso codice dell'estensione: catalogo legale e sincronizzazione Google Drive.
+on:
+  push:
+    branches: [main]
+    paths: ['web/**', 'src/**', 'assets/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepara il sito
+        run: |
+          mkdir -p _site
+          cp -r web src assets _site/
+          cp web/sw.js _site/sw.js
+          printf '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=web/index.html"><title>BingeMap</title><a href="web/index.html">Apri BingeMap</a>' > _site/index.html
+          rm -rf _site/src/background _site/src/content
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

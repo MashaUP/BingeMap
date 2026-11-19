@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "BingeMap",
+  "short_name": "BingeMap",
+  "version": "1.0.0",
+  "description": "Trova le serie del catalogo che non hai ancora visto, incrociandole con le tue liste, i tuoi tag e i tuoi voti.",
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "32": "assets/icons/icon32.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  },
+  "action": {
+    "default_title": "BingeMap",
+    "default_popup": "src/ui/popup.html",
+    "default_icon": {
+      "16": "assets/icons/icon16.png",
+      "32": "assets/icons/icon32.png",
+      "48": "assets/icons/icon48.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background/sw.js",
+    "type": "module"
+  },
+  "options_page": "src/ui/app.html#/impostazioni",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "alarms",
+    "notifications",
+    "activeTab",
+    "scripting",
+    "identity"
+  ],
+  "host_permissions": [
+    "https://api.themoviedb.org/*",
+    "https://image.tmdb.org/*",
+    "https://api.simkl.com/*",
+    "https://www.googleapis.com/*",
+    "https://raw.githubusercontent.com/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/content/badges.css"],
+      "matches": ["https://*/*", "http://*/*"]
+    }
+  ],
+  "minimum_chrome_version": "116"
+}

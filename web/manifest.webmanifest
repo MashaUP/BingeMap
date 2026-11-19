@@ -1,0 +1,15 @@
+{
+  "name": "BingeMap",
+  "short_name": "BingeMap",
+  "description": "Trova le serie che non hai ancora visto.",
+  "start_url": "./index.html#/scopri",
+  "scope": "../",
+  "display": "standalone",
+  "background_color": "#0B1020",
+  "theme_color": "#0B1020",
+  "lang": "it",
+  "icons": [
+    { "src": "icons/icon128.png", "sizes": "128x128", "type": "image/png" },
+    { "src": "icons/icon512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
