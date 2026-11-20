@@ -235,28 +235,36 @@ const handlers = {
   async 'site.register'() { await registerSiteScript(); return true; },
 
   // Collega il sito dalla scheda aperta: verifica dell'impronta della pagina, non del dominio.
-  async 'site.connect'({ tabId, url }) {
+  async 'site.connect'({ tabId, url, html: given }) {
     const u = new URL(url);
     const origin = u.origin;
     if (!(await chrome.permissions.contains({ origins: [originPattern(origin)] }))) throw new Error('Permesso per il sito non concesso');
     // Sul sito reale Vue toglie l'attributo data-page dopo l'avvio. Ordine dei tentativi:
     // 1) i dati della pagina dall'app (mondo della pagina), 2) l'attributo nel DOM, 3) l'HTML grezzo dello stesso indirizzo.
-    let html = null;
-    try {
+    const diag = [`popup: ${given ? (sc.fingerprint(given).ok ? 'ok' : 'dati non validi') : 'niente'}`];
+    let html = given && sc.fingerprint(given).ok ? given : null;
+    if (!html) try {
       const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: () => {
         try { const p = document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$page; return p ? JSON.stringify({ component: p.component, props: { titles: p.props.titles, title: p.props.title, totalCount: p.props.totalCount, sliders: p.props.sliders } }) : null; } catch (e) { return null; }
       } });
       if (result) html = `<div id="app" data-page="${result.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></div>`;
-    } catch { /* mondo della pagina non disponibile */ }
+      diag.push(`app della pagina: ${result ? 'ok' : 'niente'}`);
+    } catch (e) { diag.push(`app della pagina: ${e.message}`); }
     if (!html || !sc.fingerprint(html).ok) {
-      const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, func: async () => {
-        if (document.querySelector('[data-page]')) return document.documentElement.outerHTML;
-        try { const r = await fetch(location.href, { credentials: 'include' }); return await r.text(); } catch (e) { return document.documentElement.outerHTML; }
-      } });
-      html = result;
+      try {
+        const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, func: async () => {
+          if (document.querySelector('[data-page]')) return document.documentElement.outerHTML;
+          try { const r = await fetch(location.href, { credentials: 'include' }); return await r.text(); } catch (e) { return document.documentElement.outerHTML; }
+        } });
+        html = result;
+        diag.push(`HTML: ${String(result || '').length} caratteri, data-page ${/data-page/.test(result || '') ? 'presente' : 'assente'}`);
+      } catch (e) { diag.push(`HTML: ${e.message}`); }
     }
     const fp = sc.fingerprint(html);
-    if (!fp.ok) throw new Error(fp.reason + ' Apri la pagina dell\'archivio o della ricerca delle serie e riprova.');
+    if (!fp.ok) {
+      await log('warn', 'site', 'connect', diag.join(' · '));
+      throw new Error(`${fp.reason} Apri la pagina dell'archivio o della ricerca delle serie e riprova. (${VERSION} · ${diag.join(' · ')})`);
+    }
     const seg = u.pathname.split('/').filter(Boolean);
     const lang = seg[0] && /^[a-z]{2}$/.test(seg[0]) ? seg[0] : '';
     const patch = { sc: { origin, lang } };

@@ -3,7 +3,7 @@ import { icon, logo } from './icons.js';
 import { e, statusBadge } from './components.js';
 import { loadSettings } from '../common/settings.js';
 import { getLinks } from '../common/links.js';
-import { checkUpdate, staleKind, restartExtension } from '../common/update.js';
+import { checkUpdate, staleKind, restartExtension, workerVersion } from '../common/update.js';
 import { VERSION } from '../common/version.js';
 import { send, kv, originPattern } from '../platform/platform.js';
 import { setProfile, getAll, get } from '../db/db.js';
@@ -30,8 +30,19 @@ async function main() {
   const nextNames = await Promise.all(next.map(async (o) => (await get('catalog_titles', o.ck))?.name || o.ck));
 
   // Cartella nuova copiata ma motore vecchio ancora in esecuzione: prima di tutto serve il riavvio.
-  const swVersion = await send('app.version').catch(() => 'old');
+  const swVersion = await workerVersion(send);
   const stale = staleKind(VERSION, swVersion);
+  // Riavvio automatico, una volta per versione: dopo aver copiato la cartella nuova basta aprire il popup.
+  if (stale === 'restart') {
+    const key = 'bmAutoRestart'; let last = null;
+    try { last = JSON.parse(localStorage.getItem(key) || 'null'); } catch { /* ignora */ }
+    if (!last || last.v !== VERSION || Date.now() - last.at > 10 * 60000) {
+      try { localStorage.setItem(key, JSON.stringify({ v: VERSION, at: Date.now() })); } catch { /* ignora */ }
+      pop.innerHTML = `<section><div class="notice warn">Aggiorno BingeMap alla ${VERSION}: si riavvia da solo. Riapri il popup tra un secondo.</div></section>`;
+      setTimeout(() => restartExtension(), 400);
+      return;
+    }
+  }
   const staleBlock = stale === 'restart' ? `<div class="notice warn" style="flex-direction:column;align-items:stretch;gap:8px"><div>Hai copiato la versione <b>${VERSION}</b>, ma è ancora attiva quella di prima. Riavvia per completare l'aggiornamento.</div><button class="btn p" data-restart>${icon('power', 16)}Riavvia BingeMap</button></div>` : '';
   let pageBlock = '';
   if (onSite && idMatch) {
@@ -64,7 +75,8 @@ async function main() {
       <button class="btn" data-scan ${s.sc.origin && !job ? '' : 'disabled'}>${icon('refresh', 16)}Aggiorna il catalogo</button>
       <div class="row" style="gap:6px"><button class="btn sm" style="flex:1" data-go="/stasera?min=40">${icon('clock', 14)}Ho 40 minuti</button><button class="btn sm" style="flex:1" data-go="/calendario">${icon('calendar', 14)}In arrivo</button></div>
     </section>
-    <footer><button class="btn sm" style="flex:1" data-update>${icon('refresh', 14)}Cerca aggiornamento</button><button class="ibtn" data-restart aria-label="Riavvia BingeMap" title="Riavvia BingeMap (dopo aver copiato la cartella nuova)">${icon('power', 16)}</button><a class="ibtn" href="${e(L.kofi)}" target="_blank" rel="noopener" aria-label="Ko-fi">${icon('heart', 16)}</a><a class="ibtn" href="${e(L.discord)}" target="_blank" rel="noopener" aria-label="Discord">${icon('chat', 16)}</a></footer>`;
+    <footer><button class="btn sm" style="flex:1" data-update>${icon('refresh', 14)}Cerca aggiornamento</button> <button class="ibtn" data-restart aria-label="Riavvia BingeMap" title="Riavvia BingeMap (dopo aver copiato la cartella nuova)">${icon('power', 16)}</button><a class="ibtn" href="${e(L.kofi)}" target="_blank" rel="noopener" aria-label="Ko-fi">${icon('heart', 16)}</a><a class="ibtn" href="${e(L.discord)}" target="_blank" rel="noopener" aria-label="Discord">${icon('chat', 16)}</a></footer>
+    <p class="muted small" data-versions style="margin:0;padding:0 16px 12px;text-align:center">Versione ${VERSION} · motore ${swVersion === 'old' ? 'precedente alla 1.1.0' : e(swVersion)}${stale === 'restart' ? ' · <b class="s-drop">serve il riavvio</b>' : ''}</p>`;
 
   cur = { tab, url, origin };
   translateTree(pop);
@@ -87,8 +99,17 @@ pop.addEventListener('click', async (ev) => {
       const ok = await chrome.permissions.request({ origins: [originPattern(origin)] });
       const msg = pop.querySelector('[data-msg]');
       if (!ok) { msg.innerHTML = '<span class="s-drop">Permesso non concesso.</span>'; return; }
+      if (stale === 'restart') { msg.innerHTML = '<span class="s-drop">Prima premi «Riavvia BingeMap»: è ancora attiva la versione precedente.</span>'; return; }
       try {
-        const r = await send('site.connect', { tabId: tab.id, url });
+        // I dati della pagina li legge direttamente il popup (permesso della scheda attiva), poi li passa al motore.
+        let html = null;
+        try {
+          const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: () => {
+            try { const p = document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$page; return p ? JSON.stringify({ component: p.component, props: { titles: p.props.titles, title: p.props.title, totalCount: p.props.totalCount, sliders: p.props.sliders } }) : null; } catch (err) { return null; }
+          } });
+          if (result) html = `<div id="app" data-page="${result.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></div>`;
+        } catch { /* lo legge il motore */ }
+        const r = await send('site.connect', { tabId: tab.id, url, html });
         msg.innerHTML = r.autoStarted
           ? `<span class="s-match">Collegato. Sto leggendo tutto l'archivio delle serie: prima l'elenco (2–3 minuti), poi le schede di ogni serie, con calma. Puoi chiudere il popup: continua da solo.</span>`
           : `<span class="s-match">Collegato: trovate ${fmtNum(r.found)} serie in questa pagina. Avvia la scansione da Attività.</span>`;

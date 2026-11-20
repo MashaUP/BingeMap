@@ -10,7 +10,7 @@ import { onEvent, isExtension, send, openUrl } from '../platform/platform.js';
 import { setNextUp } from '../library/data.js';
 import { log } from '../common/diag.js';
 import { undo, canUndo } from '../library/undo.js';
-import { staleKind, restartExtension } from '../common/update.js';
+import { staleKind, restartExtension, workerVersion } from '../common/update.js';
 import { t, translateTree, setLang } from './i18n.js';
 
 const ROUTES = {
@@ -133,7 +133,7 @@ export async function doUndo() {
 // Dopo aver copiato la cartella della versione nuova: il motore in esecuzione è ancora quello vecchio finché non si riavvia.
 async function checkStale() {
   if (!isExtension || document.querySelector('[data-stale]')) return;
-  const w = await send('app.version').catch(() => 'old');
+  const w = await workerVersion(send);
   const kind = staleKind(VERSION, w);
   if (!kind) return;
   const bar = document.createElement('div');

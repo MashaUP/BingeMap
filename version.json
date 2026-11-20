@@ -1,6 +1,6 @@
 {
-  "version": "1.3.0",
+  "version": "1.3.1",
   "date": "2026-11-20",
-  "zip": "BingeMap-1.3.0.zip",
-  "notes": "Pulsante «Riavvia BingeMap» dopo aver copiato la cartella nuova (con avviso automatico). Collegando il sito parte da sola la lettura di tutto l'archivio: elenco, poi schede di ogni serie, poi TMDB. Collegamento più robusto sul sito reale. Ricerca: prima i titoli. Icona nuova, più grande e leggibile."
+  "zip": "BingeMap-1.3.1.zip",
+  "notes": "Riavvio automatico quando la cartella è nuova ma il motore è ancora quello vecchio (anche dalla 1.0.0). Il popup legge da solo i dati della pagina per il collegamento e mostra la versione del motore; in caso di errore il messaggio dice quale passaggio non è riuscito."
 }

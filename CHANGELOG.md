@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1] - 2026-11-20
+
+### Correzioni
+- Il motore della 1.0.0 non risponde alla domanda sulla versione e il controllo lo credeva aggiornato: per questo dopo aver copiato la cartella nuova «Usa questa scheda» continuava a fallire senza nessun avviso. Ora una risposta mancante vale come «motore vecchio» e, aprendo il popup, BingeMap si riavvia da solo una volta.
+- «Usa questa scheda»: i dati della pagina li legge direttamente il popup e li passa al motore. Se qualcosa non va, il messaggio dice quale passaggio non è riuscito.
+- Nel popup, in basso, la versione dei file e quella del motore in esecuzione.
+
 ## [1.3.0] - 2026-11-20
 
 ### Novità

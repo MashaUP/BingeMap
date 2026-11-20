@@ -1,6 +1,6 @@
 # BingeMap
 
-Versione: **1.3.0**
+Versione: **1.3.1**
 
 BingeMap trova le serie del catalogo che non hai ancora visto. Incrocia il catalogo con le liste che hai già in altre app (SIMKL, Refract, Trakt, IMDb e altre), toglie in automatico quello che hai completato e ti lascia combinare generi, anni, tag e voti.
 
@@ -8,7 +8,7 @@ Estensione per Chrome, Brave ed Edge, con un'app completa a tutta pagina. Nessun
 
 ## Installazione
 
-1. Scarica `BingeMap-1.3.0.zip` dalla radice del repository ed estrailo.
+1. Scarica `BingeMap-1.3.1.zip` dalla radice del repository ed estrailo.
 2. Apri `brave://extensions` o `chrome://extensions` e attiva la «Modalità sviluppatore».
 3. Premi «Carica estensione non pacchettizzata» e scegli la cartella `BingeMap`.
 

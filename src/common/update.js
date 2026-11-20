@@ -49,10 +49,19 @@ export const UPDATE_STEPS = [
 //  - 'reload': il motore è più nuovo della pagina aperta → basta ricaricare la pagina;
 //  - null: tutto allineato.
 export function staleKind(pageVersion, workerVersion) {
-  if (workerVersion === 'old') return 'restart'; // il motore non conosce nemmeno la domanda: è precedente alla 1.1.0
-  if (!workerVersion || !pageVersion) return null;
+  // Il motore non conosce nemmeno la domanda (versione precedente alla 1.1.0): risponde con un errore o con niente.
+  if (workerVersion === 'old' || workerVersion === undefined || workerVersion === null || workerVersion === '') return pageVersion ? 'restart' : null;
+  if (!pageVersion) return null;
   const c = compareVersions(pageVersion, workerVersion);
   return c > 0 ? 'restart' : c < 0 ? 'reload' : null;
+}
+
+// Chiede al motore la sua versione. Errore, nessuna risposta o niente entro 3 secondi = motore vecchio.
+export async function workerVersion(sendFn) {
+  try {
+    const v = await Promise.race([sendFn('app.version'), new Promise((r) => setTimeout(() => r('old'), 3000))]);
+    return typeof v === 'string' && /^\d+\.\d+\.\d+/.test(v) ? v : 'old';
+  } catch { return 'old'; }
 }
 
 // Riavvia l'estensione (rilegge manifest e file dal disco). Funziona anche se il motore in esecuzione è vecchio.
