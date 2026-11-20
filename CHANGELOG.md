@@ -19,6 +19,7 @@ Audit di stabilità: dettagli in `docs/DEBUG_AUDIT.md`.
 - Schede lette come dati della pagina (come fa il sito quando si naviga) invece della pagina intera: circa la metà dei dati con i titoli correlati, una frazione senza. Se il sito cambia versione si torna da soli alla pagina intera.
 - Impostazioni › Avanzate: filtro delle fette, pagine massime per elenco, modo di lettura delle schede, titoli correlati sì/no.
 - Controllo statico del codice (`npm run lint`, anche nella release automatica) e nuovi test, tra cui il collegamento con un clic vero nel popup.
+- Release automatica come negli altri progetti: alla pubblicazione di una Release su GitHub, `BingeMap-x.y.z.zip` allegato (sostituito se si rilancia) e annuncio su Discord con il link di download (segreto `DISCORD_WEBHOOK_URL`). Il workflow si ferma se il tag non coincide con la versione.
 
 ## [1.3.1] - 2026-11-20
 
