@@ -1,5 +1,5 @@
 # Quando pubblichi una release su GitHub, questo workflow controlla e testa il codice, crea
-# BingeMap-x.y.z.zip, lo allega alla release e annuncia la release su Discord.
+# BingeMap-x.y.z.zip e il suo .sha256, li allega alla release e annuncia la release su Discord.
 # Rilanciarlo (o modificare la release) sostituisce lo zip, non ne aggiunge un secondo.
 name: Zip della release
 
@@ -44,25 +44,32 @@ jobs:
           node-version: 22
 
       - name: Dipendenze di sviluppo
-        run: npm install --no-audit --no-fund --ignore-scripts
+        run: npm ci --no-audit --no-fund --ignore-scripts
 
-      - name: Controlli (versioni, manifest, codice) e test
-        if: ${{ !inputs.salta_test }}
+      - name: Tag nel formato vx.y.z
         run: |
-          node scripts/check.mjs
-          npx eslint .
-          npm test
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Il tag $TAG non è nel formato vx.y.z"; exit 1; }
 
-      - name: Zip (cartella BingeMap/, solo i file dell'estensione)
+      - name: Controlli (versioni, manifest, link, segreti), lint e test di unità
+        if: ${{ !inputs.salta_test }}
+        run: npm test
+
+      - name: Zip (cartella BingeMap/, solo i file dell'estensione) e SHA-256
         id: zip
-        run: bash scripts/pacchetto.sh "$TAG" "$RUNNER_TEMP/dist"
+        run: |
+          bash scripts/pacchetto.sh "$TAG" "$RUNNER_TEMP/dist"
+          # Lo zip è riproducibile: deve coincidere con quello nella radice, che «Cerca aggiornamento» scarica.
+          atteso=$(node -p "require('./version.json').sha256")
+          if [ "$(cut -d' ' -f1 "$RUNNER_TEMP/dist/"*.sha256)" != "$atteso" ]; then
+            echo "::warning::Lo zip costruito qui ha un SHA-256 diverso da version.json: lo zip nella radice potrebbe non corrispondere al codice (rifai npm run package)."
+          fi
 
       - name: Allega alla release (sostituisce uno zip con lo stesso nome)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "$TAG" "${{ steps.zip.outputs.percorso }}" --clobber --repo "$GITHUB_REPOSITORY"
-          echo "Allegato ${{ steps.zip.outputs.nome }} alla release $TAG" >> "$GITHUB_STEP_SUMMARY"
+          gh release upload "$TAG" "${{ steps.zip.outputs.percorso }}" "${{ steps.zip.outputs.percorso }}.sha256" --clobber --repo "$GITHUB_REPOSITORY"
+          echo "Allegati ${{ steps.zip.outputs.nome }} e ${{ steps.zip.outputs.nome }}.sha256 alla release $TAG" >> "$GITHUB_STEP_SUMMARY"
 
       # Annuncio su Discord: serve il secret DISCORD_WEBHOOK_URL (Settings › Secrets and variables › Actions),
       # lo stesso nome degli altri progetti (vale anche il vecchio DISCORD_WEBHOOK). Alla pubblicazione di una

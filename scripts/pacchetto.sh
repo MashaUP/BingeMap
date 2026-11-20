@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Crea BingeMap-x.y.z.zip: dentro la cartella BingeMap/ pronta per «Carica estensione non pacchettizzata».
-# Lo usa il workflow delle release (.github/workflows/release.yml) e si può lanciare a mano:
+# Crea BingeMap-x.y.z.zip (dentro la cartella BingeMap/ pronta per «Carica estensione non pacchettizzata»)
+# e BingeMap-x.y.z.zip.sha256. Lo usano npm run build / npm run package e il workflow delle release:
 #   scripts/pacchetto.sh [versione-attesa] [cartella-di-uscita]
-# Senza argomenti lo zip finisce nella radice del repository (quello per «Cerca aggiornamento»).
+# Senza cartella di uscita lo zip va nella radice del repository (quello che scarica «Cerca aggiornamento»)
+# e lo script scrive in version.json il nome dello zip e il suo SHA-256: mai a mano.
+# Lo zip è riproducibile (date, permessi e ordine fissi): stesso codice → stesso SHA-256, anche nelle Actions.
 # Esce con errore se le versioni non coincidono o se manca un file nominato dal manifest.
 set -euo pipefail
 
@@ -25,9 +27,13 @@ NOME="BingeMap-${VERSIONE}.zip"
 LAVORO="$(mktemp -d)"
 trap 'rm -rf "$LAVORO"' EXIT
 mkdir -p "$LAVORO/BingeMap"
-cp "$RADICE/manifest.json" "$LAVORO/BingeMap/"
+cp "$RADICE/manifest.json" "$RADICE/LICENSE" "$LAVORO/BingeMap/"
 cp -R "$RADICE/src" "$RADICE/assets" "$LAVORO/BingeMap/"
 find "$LAVORO" \( -name '.DS_Store' -o -name 'Thumbs.db' -o -name '*.log' -o -name '*~' \) -delete
+# Riproducibile: permessi e date fissi.
+find "$LAVORO" -type d -exec chmod 755 {} +
+find "$LAVORO" -type f -exec chmod 644 {} +
+find "$LAVORO" -exec env TZ=UTC touch -h -t 202601010000 {} +
 
 # Ogni file nominato dal manifest deve esserci.
 node -e '
@@ -45,8 +51,9 @@ node -e '
 ' "$LAVORO/BingeMap"
 
 mkdir -p "$USCITA"
-rm -f "$USCITA"/BingeMap-*.zip
-(cd "$LAVORO" && zip -qr9X "$USCITA/$NOME" BingeMap)
+USCITA="$(cd "$USCITA" && pwd)"
+rm -f "$USCITA"/BingeMap-*.zip "$USCITA"/BingeMap-*.zip.sha256
+(cd "$LAVORO" && find BingeMap -type f | LC_ALL=C sort | TZ=UTC zip -q -9 -X -D "$USCITA/$NOME" -@)
 
 # Controllo dell'archivio: tutto dentro BingeMap/, manifest presente, nessun file di sviluppo.
 ELENCO="$(unzip -Z1 "$USCITA/$NOME")"
@@ -54,6 +61,20 @@ grep -qx 'BingeMap/manifest.json' <<<"$ELENCO" || { echo "::error::BingeMap/mani
 if grep -vq '^BingeMap/' <<<"$ELENCO" || grep -Eq '/(tests|docs|scripts|\.github|node_modules)/|\.zip$' <<<"$ELENCO"; then
   echo "::error::Nello zip ci sono file fuori da BingeMap/ o file di sviluppo" >&2; exit 1
 fi
-echo "Creato $USCITA/$NOME ($(wc -l <<<"$ELENCO") file, $(du -h "$USCITA/$NOME" | cut -f1))"
+SHA="$(sha256sum "$USCITA/$NOME" | cut -d' ' -f1)"
+echo "$SHA  $NOME" > "$USCITA/$NOME.sha256"
+if [[ "$USCITA" == "$RADICE" ]]; then
+  node -e '
+    const fs = require("fs"); const p = process.argv[1];
+    const v = JSON.parse(fs.readFileSync(p, "utf8"));
+    v.zip = process.argv[2]; v.sha256 = process.argv[3];
+    const { version, date, zip, sha256, notes, ...rest } = v;
+    fs.writeFileSync(p, JSON.stringify({ version, date, zip, sha256, notes, ...rest }, null, 2) + "\n");
+  ' "$RADICE/version.json" "$NOME" "$SHA"
+  rm -f "$USCITA/$NOME.sha256" # nella radice basta version.json
+  echo "version.json aggiornato: zip $NOME, sha256 $SHA"
+fi
+echo "Creato $USCITA/$NOME ($(wc -l <<<"$ELENCO") file, $(du -h "$USCITA/$NOME" | cut -f1)), sha256 $SHA"
 echo "nome=$NOME" >> "${GITHUB_OUTPUT:-/dev/null}"
 echo "percorso=$USCITA/$NOME" >> "${GITHUB_OUTPUT:-/dev/null}"
+echo "sha256=$SHA" >> "${GITHUB_OUTPUT:-/dev/null}"

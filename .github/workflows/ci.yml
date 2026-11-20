@@ -1,0 +1,49 @@
+# A ogni push su main e a ogni pull request: controlli del repository, lint, test di unità e pacchetto di prova.
+# Lo zip di prova resta scaricabile per 14 giorni tra gli artifact dell'esecuzione.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Dipendenze di sviluppo
+        run: npm ci --no-audit --no-fund
+
+      - name: Controlli (versioni, manifest, link, SHA-256, segreti), lint e test di unità
+        run: npm test
+
+      - name: Pacchetto di prova
+        id: zip
+        run: |
+          bash scripts/pacchetto.sh "" dist
+          if [ "$(cut -d' ' -f1 dist/*.sha256)" != "$(node -p "require('./version.json').sha256")" ]; then
+            echo "::warning::Lo zip costruito dal codice ha un SHA-256 diverso da version.json: lo zip nella radice non corrisponde al codice (rifai npm run package prima della release)."
+          fi
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.zip.outputs.nome }}
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          retention-days: 14

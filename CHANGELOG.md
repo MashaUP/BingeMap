@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.3.3] - 2026-11-20
+
+PATCH: adeguamento agli standard comuni dei progetti e correzioni di sicurezza, senza funzioni nuove né dati da convertire.
+
+### Sicurezza
+- **Link «javascript:» nelle schede.** Sintomo: un indirizzo come `javascript:…` nel campo della serie, del trailer, di JustWatch o di AniList diventava un pulsante che, cliccato, eseguiva codice nella pagina di BingeMap. Causa: gli indirizzi venivano solo protetti per l'HTML, non controllati. Correzione: solo indirizzi http e https; gli altri non diventano link.
+- **Colore e indirizzo delle ricerche salvate.** Sintomo: una ricerca arrivata da un backup o dalla sincronizzazione poteva inserire CSS a piacere o rompere il link della scheda Scopri. Causa: colore e identificativo erano inseriti senza controlli. Correzione: solo colori esadecimali e identificativo codificato nell'indirizzo.
+- Revisione di tutti gli `innerHTML` con dati: gli altri passavano già da `e()`. Un test end-to-end inserisce titoli, trame, tag, ricerche e link malevoli e visita 24 pagine; `scripts/check.mjs` blocca `insertAdjacentHTML`, `outerHTML`, `document.write` e gli `href` con valori non controllati.
+
+### Aggiornamenti e link
+- `version.json` nel formato comune: `notes` è un elenco, `zip` e `sha256` li scrive `scripts/pacchetto.sh`. Lo zip è riproducibile (stesso codice, stesso SHA-256, anche nelle Actions).
+- «Cerca aggiornamento»: mostra versione attuale e nuova, data e novità in elenco; «Scarica» prende lo zip dal repository, ne verifica lo SHA-256 e lo salva solo se coincide. Messaggi chiari per file mancante, limite di GitHub e rete assente. Nessun permesso nuovo: lo zip si legge da raw.githubusercontent.com. Nell'app web il pulsante ricarica l'app.
+- `links.json` nel formato comune (schemaVersion 1) con guida, novità, segnalazioni e idee. Ogni voce è validata da sola (solo https, host consentiti, host proprio per Discord, Ko-fi e GitHub); una voce non valida resta al valore di serie, `enabled: false` nasconde il link. Le versioni fino alla 1.3.2 ignorano il file nuovo e tengono i link di serie, che sono gli stessi.
+
+### Interfaccia
+- Barra laterale: il pulsante «Riavvia BingeMap» era tagliato e compariva una barra di scorrimento orizzontale (dalla 1.3.0, non c'era spazio accanto a «Cerca aggiornamento»). Ora sta accanto alla riga della versione.
+- Impostazioni › Informazioni: link a guida, novità, segnalazioni e idee (da `links.json`).
+
+### Repository
+- `ci.yml`: controlli, lint, test di unità e pacchetto di prova a ogni push e pull request.
+- Release: allega anche `BingeMap-x.y.z.zip.sha256`, si ferma se il tag non è `vx.y.z`.
+- Modelli per le segnalazioni (`bug.yml`, `idea.yml`) che chiedono versione, browser e report di diagnostica.
+- `npm test` esegue controlli, lint e test di unità; `npm run build` e `npm run package` come negli altri progetti.
+
 ## [1.3.2] - 2026-11-20
 
 Audit di stabilità: dettagli in `docs/DEBUG_AUDIT.md`.

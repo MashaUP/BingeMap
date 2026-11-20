@@ -7,7 +7,7 @@ import { checkUpdate, staleKind, restartExtension, workerVersion } from '../comm
 import { VERSION } from '../common/version.js';
 import { send, kv, originPattern } from '../platform/platform.js';
 import { setProfile, getAll, get } from '../db/db.js';
-import { fmtDate, fmtNum } from '../common/util.js';
+import { fmtDate, fmtNum, httpUrl } from '../common/util.js';
 import { SOURCES } from '../import/sources.js';
 import { setLang, translateTree } from './i18n.js';
 
@@ -77,7 +77,7 @@ async function main() {
       <button class="btn" data-scan ${s.sc.origin && !job ? '' : 'disabled'}>${icon('refresh', 16)}Aggiorna il catalogo</button>
       <div class="row" style="gap:6px"><button class="btn sm" style="flex:1" data-go="/stasera?min=40">${icon('clock', 14)}Ho 40 minuti</button><button class="btn sm" style="flex:1" data-go="/calendario">${icon('calendar', 14)}In arrivo</button></div>
     </section>
-    <footer><button class="btn sm" style="flex:1" data-update>${icon('refresh', 14)}Cerca aggiornamento</button> <button class="ibtn" data-restart aria-label="Riavvia BingeMap" title="Riavvia BingeMap (dopo aver copiato la cartella nuova)">${icon('power', 16)}</button><a class="ibtn" href="${e(L.kofi)}" target="_blank" rel="noopener" aria-label="Ko-fi">${icon('heart', 16)}</a><a class="ibtn" href="${e(L.discord)}" target="_blank" rel="noopener" aria-label="Discord">${icon('chat', 16)}</a></footer>
+    <footer><button class="btn sm" style="flex:1" data-update>${icon('refresh', 14)}Cerca aggiornamento</button> <button class="ibtn" data-restart aria-label="Riavvia BingeMap" title="Riavvia BingeMap (dopo aver copiato la cartella nuova)">${icon('power', 16)}</button>${[[L.kofi, 'heart'], [L.discord, 'chat']].filter(([l]) => httpUrl(l?.url)).map(([l, ic]) => `<a class="ibtn" href="${e(httpUrl(l.url))}" target="_blank" rel="noopener" aria-label="${e(l.label)}" title="${e(l.label)}">${icon(ic, 16)}</a>`).join('')}</footer>
     <p class="muted small" data-versions style="margin:0;padding:0 16px 12px;text-align:center">Versione ${VERSION} · motore ${swVersion === 'old' ? 'precedente alla 1.1.0' : e(swVersion)}${stale === 'restart' ? ' · <b class="s-drop">serve il riavvio</b>' : ''}</p>`;
 
   cur = { tab, url, origin, stale };

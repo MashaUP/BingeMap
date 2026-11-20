@@ -36,6 +36,15 @@ export function lowerKey(s) {
   return stripAccents(s).toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+// Indirizzo da mettere in un href: solo http(s). Dati da siti, import o backup potrebbero contenere «javascript:».
+export function httpUrl(u) {
+  if (typeof u !== 'string') return '';
+  try { const x = new URL(u.trim()); return x.protocol === 'https:' || x.protocol === 'http:' ? x.href : ''; } catch { return ''; }
+}
+
+// Colore da mettere in uno style: solo #rgb, #rrggbb o #rrggbbaa (una ricerca importata potrebbe contenere altro CSS).
+export const safeColor = (c, fallback = '#6D4AFF') => (typeof c === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(c) ? c : fallback);
+
 export function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

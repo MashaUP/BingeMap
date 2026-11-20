@@ -8,7 +8,7 @@ import { episodesUpTo } from '../../library/progress.js';
 import { STATUS_IT } from '../../library/alerts.js';
 import { setRule, runMatching } from '../../match/run.js';
 import { METHOD_LABEL } from '../../match/matcher.js';
-import { fmtDate, fmtNum, fmtDec, sameProvider } from '../../common/util.js';
+import { fmtDate, fmtNum, fmtDec, sameProvider, httpUrl } from '../../common/util.js';
 import { get, getAll } from '../../db/db.js';
 import { SOURCES } from '../../import/sources.js';
 import { FIELDS } from '../../query/engine.js';
@@ -33,12 +33,12 @@ export async function render(root, { args }, ctx) {
       ${v.alt.length ? `<p class="muted small" style="margin:4px 0 0">Anche: ${e(v.alt.slice(0, 6).join(', '))}</p>` : ''}</div>
       <div class="row">${statusBadge(v.status, v.statusFrom === 'manual' ? ' · scelto da te' : v.pendingMatch ? ' · corrispondenza da confermare' : '')}${stars(v.score)}${v.conflict ? '<span class="tag" style="color:var(--warn)">Stati diversi tra le fonti</span>' : ''}${v.newSeason ? '<span class="tag s-match">Nuova stagione</span>' : ''}${v.endedNow ? '<span class="tag s-match">Ora conclusa</span>' : ''}${v.statusChange ? `<span class="tag" style="color:var(--warn)">${e(STATUS_IT[v.statusChange.to] || v.statusChange.to)} da poco</span>` : ''}${v.nextAir?.date ? `<span class="tag s-match">${icon('calendar', 12)} ${e(airLabel(v.nextAir))}</span>` : ''}</div>
       <div class="row">
-        ${v.url ? `<a class="btn p" href="${e(v.url)}" target="_blank" rel="noopener">${icon('external', 16)}${v.catalogs.includes('sc') ? 'Apri sul sito' : 'Dove guardarla'}</a>` : ''}
+        ${httpUrl(v.url) ? `<a class="btn p" href="${e(httpUrl(v.url))}" target="_blank" rel="noopener">${icon('external', 16)}${v.catalogs.includes('sc') ? 'Apri sul sito' : 'Dove guardarla'}</a>` : ''}
         <button class="btn" data-a="watched">${icon('check', 16)}${v.status === 'completed' ? 'Segna non vista' : 'Segna come vista'}</button>
         <button class="btn" data-a="nextup">${icon('bookmark', 16)}${v.nextUp != null ? 'Togli dalle prossime 5' : 'Aggiungi alle prossime 5'}</button>
         <button class="btn" data-a="snooze">${icon('clock', 16)}Rimanda 30 giorni</button>
         <button class="btn" data-a="noint">${icon('ban', 16)}${v.notInterested ? 'Mi interessa di nuovo' : 'Non mi interessa'}</button>
-        ${v.trailer ? `<a class="btn" href="${e(v.trailer)}" target="_blank" rel="noopener">${icon('play', 16)}Trailer</a>` : ''}
+        ${httpUrl(v.trailer) ? `<a class="btn" href="${e(httpUrl(v.trailer))}" target="_blank" rel="noopener">${icon('play', 16)}Trailer</a>` : ''}
       </div>
       ${v.plot ? (spoiler ? `<div class="row"><span class="muted">${icon('eye', 16)} Trama nascosta: stai guardando questa serie.</span><button class="btn sm" data-a="spoiler">Mostra la trama</button></div><p class="muted" data-plot hidden style="margin:0;max-width:75ch;line-height:1.6">${e(v.plot)}</p>` : `<p class="muted" style="margin:0;max-width:75ch;line-height:1.6">${e(v.plot)}</p>`) : ''}
       ${v.openEnding && v.status !== 'completed' ? `<div class="notice warn">${icon('alert')}<div><b>Cancellata senza finale</b>: è stata interrotta dopo ${v.openEnding.seasons ?? '?'} ${v.openEnding.seasons === 1 ? 'stagione' : 'stagioni'}, la storia potrebbe restare in sospeso.</div></div>` : ''}
@@ -180,7 +180,7 @@ function legalPanel(v, settings) {
     <div class="between"><h2 style="font-size:16px">Dove guardarla legalmente</h2>${onMine ? `<span class="tag s-match">${icon('check', 12)} Nel tuo abbonamento</span>` : ''}</div>
     ${w ? `${group('In abbonamento', w.flatrate)}${group('Gratis', w.free)}${group('Noleggio', w.rent)}${group('Acquisto', w.buy)}
       ${!w.flatrate.length && !w.free.length && !w.rent.length && !w.buy.length ? '<span class="muted">Nessun servizio in Italia secondo JustWatch.</span>' : ''}
-      <div class="row small muted" style="gap:10px">Dati di JustWatch tramite TMDB, Italia, aggiornati il ${fmtDate(w.at)}.${w.link ? ` <a href="${e(w.link)}" target="_blank" rel="noopener">Apri su TMDB</a>` : ''}</div>`
+      <div class="row small muted" style="gap:10px">Dati di JustWatch tramite TMDB, Italia, aggiornati il ${fmtDate(w.at)}.${httpUrl(w.link) ? ` <a href="${e(httpUrl(w.link))}" target="_blank" rel="noopener">Apri su TMDB</a>` : ''}</div>`
     : `<span class="muted">Il catalogo indica che esiste anche su: <b>${e(v.siteProviders.join(', '))}</b>. Inserisci la chiave TMDB per vedere servizi e prezzi aggiornati.</span>`}
   </section>`;
 }

@@ -1,0 +1,56 @@
+name: Segnala un problema
+description: Qualcosa in BingeMap non funziona come dovrebbe
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Grazie! **Non incollare** chiavi (TMDB, SIMKL, Google), token, cookie o password.
+        Il report di diagnostica di BingeMap li toglie già: puoi allegarlo qui sotto.
+        Per una risposta veloce c'è anche il [Discord](https://discord.gg/EPsbQCuAkx).
+  - type: input
+    id: versione
+    attributes:
+      label: Versione di BingeMap
+      description: "È scritta in fondo al popup («Versione X · motore Y»). Copia tutta la riga."
+      placeholder: "Versione 1.3.3 · motore 1.3.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options: ["Brave", "Chrome", "Edge", "App web (sito)", "Altro"]
+    validations:
+      required: true
+  - type: input
+    id: browser-versione
+    attributes:
+      label: Versione del browser
+      placeholder: "Brave 1.84 / Chrome 142"
+  - type: textarea
+    id: cosa
+    attributes:
+      label: Cosa è successo
+      description: "Cosa ti aspettavi e cosa è successo invece. Se c'è un messaggio di errore, copialo per intero."
+    validations:
+      required: true
+  - type: textarea
+    id: passi
+    attributes:
+      label: Come ripeterlo
+      placeholder: |
+        1. Apro…
+        2. Premo…
+        3. Compare…
+  - type: textarea
+    id: diagnostica
+    attributes:
+      label: Report di diagnostica
+      description: "Dashboard › Attività › Diagnostica › «Scarica il report», poi trascina qui il file o incollane il contenuto."
+      render: text
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot (facoltativi)
+      description: "Trascina qui le immagini. Copri eventuali dati personali."

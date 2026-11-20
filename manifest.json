@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "BingeMap",
   "short_name": "BingeMap",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Trova le serie del catalogo che non hai ancora visto, incrociandole con le tue liste, i tuoi tag e i tuoi voti.",
   "icons": {
     "16": "assets/icons/icon16.png",

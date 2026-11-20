@@ -100,11 +100,14 @@ test('aggiornamenti: versione nuova, una notifica per versione, link Discord da 
   assert.equal(await shouldNotify('9.9.9'), true);
   assert.equal(await shouldNotify('9.9.9'), false);
   assert.equal(await shouldNotify('9.9.10'), true);
-  const before = await getLinks();
-  await refreshLinks(true, json({ revision: before.revision + 1, kofi: 'https://ko-fi.com/mashaup', discord: 'https://discord.gg/NUOVO' }));
-  assert.equal((await getLinks()).discord, 'https://discord.gg/NUOVO');
-  await refreshLinks(true, json({ revision: 0, kofi: 'https://ko-fi.com/mashaup', discord: 'https://discord.gg/VECCHIO' }));
-  assert.equal((await getLinks()).discord, 'https://discord.gg/NUOVO', 'una revisione più vecchia non sovrascrive');
+  // Dalla 1.3.3 links.json è nel formato comune (schemaVersion 1, voci in «links»): vedi anche v133.test.js.
+  const lj = (revision, discord) => json({ schemaVersion: 1, project: 'bingemap', revision, links: { discord: { url: discord, enabled: true, label: 'Discord' } } });
+  await kv.set('linksCheckedAt', 0);
+  await refreshLinks(true, lj(10, 'https://discord.gg/NUOVO'));
+  assert.equal((await getLinks()).discord.url, 'https://discord.gg/NUOVO');
+  await kv.set('linksCheckedAt', 0);
+  await refreshLinks(true, lj(0, 'https://discord.gg/VECCHIO'));
+  assert.equal((await getLinks()).discord.url, 'https://discord.gg/NUOVO', 'una revisione più vecchia non sovrascrive');
   assert.equal(needsReload('1.0.0', '1.1.0'), true);
   assert.equal(needsReload('1.1.0', '1.1.0'), false);
   assert.equal(needsReload('1.1.0', null), false);

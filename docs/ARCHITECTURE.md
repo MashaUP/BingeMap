@@ -66,3 +66,11 @@ Tre strati mai mescolati: catalogo (`catalog_*`, `scan_*`, `tmdb_cache`), librer
 - **Collegamento**: il popup legge i dati della pagina prima di chiedere il permesso e lascia la richiesta in `chrome.storage.session` (`pendingConnect`); `permissions.onAdded` nel motore la completa se il popup si è chiuso. `site.connect` è unico per sito (`connecting`).
 - **Impostazioni salvate in una sola transazione** (`saveSettings` con `atomic`).
 - **Controllo statico**: `eslint.config.js`, `npm run lint`; `npm run check` e la release automatica lo eseguono.
+
+## Standard comuni (1.3.3)
+
+- `src/common/links.js`: `links.json` nel formato comune (schemaVersion 1). `parseLinks` valida ogni voce da sola (https, host consentiti, host proprio per github/discord/kofi), `refreshLinks` rilegge al massimo ogni 12 ore o a mano una volta al minuto e tiene l'ultima configurazione valida. Cache in `kv.linksV1`.
+- `src/common/update.js`: `parseVersionFile` (`notes` in elenco), `checkUpdate` (raw.githubusercontent.com, `credentials: omit`), `downloadUpdate` (zip in memoria, SHA-256 confrontato con `version.json`, salvato con `download()` solo se coincide).
+- `src/common/util.js`: `httpUrl` (solo http/https negli `href` di dati esterni), `safeColor` (solo colori esadecimali negli `style`). Tutto il testo dei dati passa da `e()`. `scripts/check.mjs` blocca `insertAdjacentHTML`, `outerHTML`, `document.write` e gli `href` non controllati.
+- `scripts/pacchetto.sh` (zip riproducibile, `.sha256`, `version.json`), `scripts/github-zip.sh`, `ci.yml`, `release.yml`.
+

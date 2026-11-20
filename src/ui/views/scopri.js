@@ -5,7 +5,7 @@ import { presets, moods, discoveryCond } from '../../query/presets.js';
 import { listQueries } from '../../library/data.js';
 import { parseNatural } from '../../query/nlp.js';
 import { describe } from '../../query/engine.js';
-import { encodeObj, fmtNum, fmtDate, daysBetween } from '../../common/util.js';
+import { encodeObj, fmtNum, fmtDate, daysBetween, safeColor } from '../../common/util.js';
 import { getAll, getSetting } from '../../db/db.js';
 import { bumpSkip } from '../../library/data.js';
 
@@ -62,7 +62,7 @@ export async function render(root, _p, ctx) {
   ${nextUp.total ? `<section class="col"><div class="between"><h2>Le prossime ${nextUp.total}</h2><span class="muted small">La tua coda corta: aggiungi con il segnalibro</span></div><div class="cards">${nextUp.items.map((v) => card(v)).join('')}</div></section>` : ''}
   <section class="col" aria-labelledby="col-t">
     <div class="between"><h2 id="col-t">${pinned.length ? 'Le tue collezioni' : 'Collezioni consigliate'}</h2><a href="#/ricerche">Tutte le ricerche</a></div>
-    <div class="grid g4">${cols.map((q, i) => `<a class="card" href="#/${q.id.startsWith('p-') ? 'preset' : 'ricerca'}/${q.id}" style="padding:18px;display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--text);border-top:3px solid ${e(q.color || '#6D4AFF')}">
+    <div class="grid g4">${cols.map((q, i) => `<a class="card" href="#/${String(q.id).startsWith('p-') ? 'preset' : 'ricerca'}/${encodeURIComponent(q.id)}" style="padding:18px;display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--text);border-top:3px solid ${safeColor(q.color)}">
       <div class="between"><b>${e(q.name)}</b>${q.newIds?.length ? `<span class="s-match small" style="font-weight:600">+${q.newIds.length} nuove</span>` : ''}</div>
       <span class="muted small">${e(describe(q.query))}</span><span class="h" style="font-size:22px;margin-top:auto">${fmtNum(colCounts[i].total)} serie</span></a>`).join('')}</div>
   </section>
@@ -116,7 +116,7 @@ export async function surpriseDialog(ctx, ast) {
         <div class="row"><button class="btn p" data-reveal>${icon('eye')}Rivela</button><button class="btn" data-skip>${icon('dice')}Un'altra</button></div>
       </div>
     </div>`);
-  m.el.querySelector('[data-reveal]').addEventListener('click', () => { m.el.querySelectorAll('.reveal').forEach((x) => x.classList.remove('reveal')); m.el.querySelector('[data-reveal]').outerHTML = `<a class="btn p" href="#/serie/${encodeURIComponent(v.ck)}">${icon('external')}Apri la scheda</a>`; });
+  m.el.querySelector('[data-reveal]').addEventListener('click', () => { m.el.querySelectorAll('.reveal').forEach((x) => x.classList.remove('reveal')); const a = document.createElement('a'); a.className = 'btn p'; a.href = `#/serie/${encodeURIComponent(v.ck)}`; a.innerHTML = `${icon('external')}Apri la scheda`; m.el.querySelector('[data-reveal]').replaceWith(a); });
   m.el.querySelector('[data-skip]').addEventListener('click', async () => { await bumpSkip(v.ck); ctx.store.changed(); m.close(); setTimeout(() => surpriseDialog(ctx, ast), 250); });
 }
 

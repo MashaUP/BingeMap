@@ -4,6 +4,7 @@ import { icon } from '../icons.js';
 import { fetchSeason, seasonOf, SEASON_IT, ANILIST_API } from '../../import/anime.js';
 import { isExtension, hasOrigin, requestOrigin, sessionKv } from '../../platform/platform.js';
 import { setOverlay } from '../../library/data.js';
+import { httpUrl } from '../../common/util.js';
 
 export async function render(root, { params }, ctx) {
   const now = seasonOf();
@@ -24,7 +25,7 @@ export async function render(root, { params }, ctx) {
         <div class="t">${v ? `<a href="#/serie/${encodeURIComponent(v.ck)}">${e(a.title)}</a>` : e(a.title)}</div>
         <div class="m">${e([a.score ? `★ ${a.score.toFixed(1)}` : '', a.episodes ? `${a.episodes} ep.` : '', a.genres.slice(0, 2).join(', ')].filter(Boolean).join(' · '))}</div>
         ${a.next ? `<div class="why s-match small">Ep. ${a.next.episode} ${new Date(a.next.at).toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })}</div>` : ''}
-        <div class="row small" style="gap:6px">${v ? (['none', 'unknown'].includes(v.status) ? `<button class="btn sm" data-plan="${e(v.ck)}">${icon('bookmark', 12)}Da vedere</button>` : '') : '<span class="muted">Non nel catalogo</span>'}${a.url ? `<a class="small" href="${e(a.url)}" target="_blank" rel="noopener">AniList</a>` : ''}</div></article>`; }).join('')}</div>
+        <div class="row small" style="gap:6px">${v ? (['none', 'unknown'].includes(v.status) ? `<button class="btn sm" data-plan="${e(v.ck)}">${icon('bookmark', 12)}Da vedere</button>` : '') : '<span class="muted">Non nel catalogo</span>'}${httpUrl(a.url) ? `<a class="small" href="${e(httpUrl(a.url))}" target="_blank" rel="noopener">AniList</a>` : ''}</div></article>`; }).join('')}</div>
       <p class="muted small">Dati di AniList (anilist.co).</p>`;
   };
   const start = async () => {

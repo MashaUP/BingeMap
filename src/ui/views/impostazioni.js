@@ -198,7 +198,8 @@ export async function render(root, { args }, ctx) {
     const L = await getLinks();
     f.innerHTML = `<h2>BingeMap ${e(VERSION)}</h2>
       <p style="margin:0">Trova le serie del catalogo che non hai ancora visto, con le tue liste, i tuoi tag e i tuoi voti. Nessun account, nessun server: i dati restano sul tuo dispositivo (e, se lo scegli, nel tuo Google Drive).</p>
-      <div class="row"><button type="button" class="btn" data-act="update">${icon('refresh')}Cerca aggiornamento</button><a class="btn" href="${e(L.kofi)}" target="_blank" rel="noopener">${icon('heart')}Supporta su Ko-fi</a><a class="btn" href="${e(L.discord)}" target="_blank" rel="noopener">${icon('chat')}Community Discord</a></div>
+      <div class="row"><button type="button" class="btn" data-act="update">${icon('refresh')}Cerca aggiornamento</button>${L.kofi?.url ? `<a class="btn" href="${e(L.kofi.url)}" target="_blank" rel="noopener">${icon('heart')}Supporta su Ko-fi</a>` : ''}${L.discord?.url ? `<a class="btn" href="${e(L.discord.url)}" target="_blank" rel="noopener">${icon('chat')}Community Discord</a>` : ''}</div>
+      <div class="row">${['documentation', 'changelog', 'bugs', 'ideas'].filter((k) => L[k]?.url).map((k) => `<a class="btn sm" href="${e(L[k].url)}" target="_blank" rel="noopener">${e(L[k].label)}</a>`).join('')}</div>
       <h2>Attribuzioni</h2>
       <p class="small" style="margin:0">Questo prodotto usa l'API TMDB ma non è approvato né certificato da TMDB. Dati e immagini dei metadati: <a href="https://www.themoviedb.org" target="_blank" rel="noopener">The Movie Database (TMDB)</a>.</p>
       <p class="small" style="margin:0">Dati su dove guardare (catalogo legale): <a href="https://www.justwatch.com" target="_blank" rel="noopener">JustWatch</a>.</p>

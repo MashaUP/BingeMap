@@ -1,5 +1,14 @@
 {
-  "revision": 1,
-  "kofi": "https://ko-fi.com/mashaup",
-  "discord": "https://discord.gg/EPsbQCuAkx"
+  "schemaVersion": 1,
+  "project": "bingemap",
+  "revision": 2,
+  "links": {
+    "github": { "url": "https://github.com/MashaUP/BingeMap", "enabled": true, "label": "GitHub" },
+    "discord": { "url": "https://discord.gg/EPsbQCuAkx", "enabled": true, "label": "Discord" },
+    "kofi": { "url": "https://ko-fi.com/mashaup", "enabled": true, "label": "Ko-fi" },
+    "documentation": { "url": "https://github.com/MashaUP/BingeMap#readme", "enabled": true, "label": "Guida" },
+    "changelog": { "url": "https://github.com/MashaUP/BingeMap/blob/main/CHANGELOG.md", "enabled": true, "label": "Novità" },
+    "bugs": { "url": "https://github.com/MashaUP/BingeMap/issues/new?template=bug.yml", "enabled": true, "label": "Segnala un problema" },
+    "ideas": { "url": "https://github.com/MashaUP/BingeMap/issues/new?template=idea.yml", "enabled": true, "label": "Proponi un'idea" }
+  }
 }

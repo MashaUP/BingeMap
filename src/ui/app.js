@@ -1,10 +1,11 @@
 // Guscio dell'app: menu, router, palette dei comandi, azioni globali.
 import * as store from './store.js';
 import { icon, logo } from './icons.js';
-import { e, toast, modal } from './components.js';
+import { e, toast, modal, download } from './components.js';
+import { httpUrl } from '../common/util.js';
 import { loadSettings } from '../common/settings.js';
 import { getLinks, refreshLinks } from '../common/links.js';
-import { checkUpdate, UPDATE_STEPS } from '../common/update.js';
+import { checkUpdate, downloadUpdate, UPDATE_STEPS } from '../common/update.js';
 import { VERSION } from '../common/version.js';
 import { onEvent, isExtension, send, openUrl } from '../platform/platform.js';
 import { setNextUp } from '../library/data.js';
@@ -12,6 +13,9 @@ import { log } from '../common/diag.js';
 import { undo, canUndo } from '../library/undo.js';
 import { staleKind, restartExtension, workerVersion } from '../common/update.js';
 import { t, translateTree, setLang } from './i18n.js';
+
+// Link da links.json (già validato): un link disattivato non compare.
+const linkBtn = (l, ic, cls, style = '', text = null) => (httpUrl(l?.url) ? `<a class="${cls}"${style ? ` style="${style}"` : ''} href="${e(httpUrl(l.url))}" target="_blank" rel="noopener">${icon(ic, 16)}${e(text || l.label)}</a>` : '');
 
 const ROUTES = {
   benvenuto: () => import('./views/benvenuto.js'),
@@ -82,9 +86,9 @@ function sidebar(active) {
     <nav class="nav" aria-label="Menu principale">${items}</nav>
     <div class="side-foot">
       <button class="btn sm" type="button" data-act="palette">${icon('command', 16)}Comandi <kbd>Ctrl K</kbd></button>
-      <div class="row" style="gap:8px;flex-wrap:nowrap"><button class="btn sm" style="flex:1" type="button" data-act="update">${icon('refresh', 16)}Cerca aggiornamento</button>${isExtension ? `<button class="btn sm" type="button" data-act="restart" title="Riavvia BingeMap: dopo aver copiato la cartella della versione nuova" aria-label="Riavvia BingeMap">${icon('power', 16)}</button>` : ''}</div>
-      <div class="row" style="gap:8px"><a class="btn sm" style="flex:1" href="${e(L.kofi)}" target="_blank" rel="noopener">${icon('heart', 16)}Ko-fi</a><a class="btn sm" style="flex:1" href="${e(L.discord)}" target="_blank" rel="noopener">${icon('chat', 16)}Discord</a></div>
-      <div class="muted small" style="padding:0 4px">v${VERSION} · profilo «${e(store.getProfileName())}» · dati solo su questo dispositivo${isExtension ? '' : ' (app web)'}</div>
+      <button class="btn sm" type="button" data-act="update">${icon('refresh', 16)}Cerca aggiornamento</button>
+      <div class="row" style="gap:8px">${linkBtn(L.kofi, 'heart', 'btn sm', 'flex:1')}${linkBtn(L.discord, 'chat', 'btn sm', 'flex:1')}</div>
+      <div class="row" style="gap:6px;flex-wrap:nowrap;align-items:flex-start"><div class="muted small" style="padding:0 4px;flex:1;min-width:0">v${VERSION} · profilo «${e(store.getProfileName())}» · dati solo su questo dispositivo${isExtension ? '' : ' (app web)'}</div>${isExtension ? `<button class="ibtn" type="button" data-act="restart" title="Riavvia BingeMap: dopo aver copiato la cartella della versione nuova" aria-label="Riavvia BingeMap">${icon('power', 16)}</button>` : ''}</div>
     </div>`;
 }
 
@@ -187,9 +191,29 @@ async function updateDialog() {
     m.el.querySelector('[data-restart]')?.addEventListener('click', () => restartExtension());
     return;
   }
-  m.el.innerHTML = `<h2>Nuova versione ${e(u.latest)}</h2><p>${e(u.notes)}</p><ol>${UPDATE_STEPS.map((s) => `<li>${e(s)}</li>`).join('')}</ol>
-    <div class="row" style="justify-content:flex-end"><button class="btn" data-close>Più tardi</button><a class="btn p" href="${e(u.zipUrl)}" target="_blank" rel="noopener">${icon('download', 16)}Scarica lo zip</a>${isExtension ? `<button class="btn p" data-restart>${icon('refresh', 16)}Riavvia BingeMap</button>` : ''}</div>`;
-  m.el.querySelector('[data-restart]')?.addEventListener('click', () => restartExtension());
+  const notes = u.notes.length ? `<ul class="small" style="margin:0;padding-left:20px">${u.notes.map((n) => `<li>${e(n)}</li>`).join('')}</ul>` : '';
+  if (!isExtension) {
+    // App web: i file nuovi arrivano ricaricando la pagina.
+    m.el.innerHTML = `<h2>Nuova versione ${e(u.latest)}</h2><p class="muted" style="margin:0">Hai la ${e(u.current)}${u.date ? ` · pubblicata il ${e(u.date)}` : ''}.</p>${notes}
+      <div class="row" style="justify-content:flex-end"><button class="btn" data-close>Più tardi</button><button class="btn p" data-reload>${icon('refresh', 16)}Ricarica l'app</button></div>`;
+    m.el.querySelector('[data-reload]').addEventListener('click', () => location.reload());
+    return;
+  }
+  m.el.innerHTML = `<h2>Nuova versione ${e(u.latest)}</h2><p class="muted" style="margin:0">Hai la ${e(u.current)}${u.date ? ` · pubblicata il ${e(u.date)}` : ''}.</p>${notes}
+    <ol>${UPDATE_STEPS.map((s) => `<li>${e(s)}</li>`).join('')}</ol>
+    <div data-dl-msg class="small" aria-live="polite"></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn" data-close>Più tardi</button><button class="btn p" data-dl>${icon('download', 16)}Scarica ${e(u.zip)}</button><button class="btn p" data-restart>${icon('refresh', 16)}Riavvia BingeMap</button></div>`;
+  m.el.querySelector('[data-restart]').addEventListener('click', () => restartExtension());
+  const btn = m.el.querySelector('[data-dl]'); const msg = m.el.querySelector('[data-dl-msg]');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; msg.className = 'small muted'; msg.textContent = 'Scarico e controllo l\'impronta dello zip…';
+    try {
+      const d = await downloadUpdate(u);
+      download(d.name, d.blob);
+      msg.className = 'small s-match';
+      msg.textContent = d.verified ? `Scaricato ${d.name}: impronta SHA-256 verificata (${d.hash.slice(0, 12)}…). Ora estrai la cartella BingeMap al posto di quella vecchia e premi «Riavvia BingeMap».` : `Scaricato ${d.name} (version.json non dichiara l'impronta: non verificata).`;
+    } catch (err) { msg.className = 'small s-drop'; msg.textContent = err.message; } finally { btn.disabled = false; }
+  });
 }
 
 // --- Palette dei comandi (idea 19)

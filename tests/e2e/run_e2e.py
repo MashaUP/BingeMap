@@ -35,10 +35,18 @@ AXE = ROOT / "node_modules/axe-core/axe.min.js"
 def prepare_extension():
     """Test 1: si costruisce il pacchetto vero e si carica quello estratto. Un file dimenticato da pacchetto.sh fa fallire i test."""
     import zipfile
-    subprocess.run(["bash", str(ROOT / "scripts/pacchetto.sh")], check=True, cwd=ROOT, stdout=subprocess.DEVNULL)
+    # Pacchetto costruito in una cartella temporanea: i test non toccano lo zip né version.json del repository.
+    build = Path(tempfile.mkdtemp(prefix="bm-build-"))
+    subprocess.run(["bash", str(ROOT / "scripts/pacchetto.sh"), "", str(build)], check=True, cwd=ROOT, stdout=subprocess.DEVNULL)
     version = json.loads((ROOT / "manifest.json").read_text())["version"]
     tmp = Path(tempfile.mkdtemp(prefix="bm-ext-"))
-    with zipfile.ZipFile(ROOT / f"BingeMap-{version}.zip") as z:
+    zpath = build / f"BingeMap-{version}.zip"
+    sha_line = (build / f"BingeMap-{version}.zip.sha256").read_text().split()
+    import hashlib
+    check("pacchetto: file .sha256 con l'impronta dello zip", sha_line[0] == hashlib.sha256(zpath.read_bytes()).hexdigest() and sha_line[1] == zpath.name, str(sha_line))
+    subprocess.run(["bash", str(ROOT / "scripts/pacchetto.sh"), "", str(build / "bis")], check=True, cwd=ROOT, stdout=subprocess.DEVNULL)
+    check("pacchetto riproducibile: due costruzioni, stesso SHA-256", (build / "bis" / zpath.name).read_bytes() == zpath.read_bytes())
+    with zipfile.ZipFile(zpath) as z:
         names = z.namelist()
         check("pacchetto: tutto dentro la cartella BingeMap/", all(n.startswith("BingeMap/") for n in names), str(names[:3]))
         check("pacchetto: niente test né node_modules", not any(("tests/" in n or "node_modules" in n) for n in names))
@@ -487,6 +495,47 @@ def main():
             check("interfaccia in inglese", "Discover" in nav and "My library" in nav and "Check for updates" in nav, nav[:160])
             app.screenshot(path=str(OUT / "17-english.png"))
             app.evaluate("() => import('/src/common/settings.js').then(m => m.saveSettings({ lang: 'it' }))")
+
+            # XSS: titoli, trame, tag, ricerche salvate e indirizzi con HTML e «javascript:» (come potrebbero arrivare da un sito,
+            # da un import o da un backup). Nessuna pagina deve eseguire codice o creare elementi dai dati.
+            XSS = app.evaluate("""async () => {
+              const P = '"><img src=x onerror="window.__xss=(window.__xss||0)+1" data-xss="1"><svg data-xss="1" onload="window.__xss=1">\\'<b data-xss="1">';
+              const db = await import('/src/db/db.js');
+              const base = await db.get('catalog_titles', 'sc:1');
+              await db.put('catalog_titles', { ...base, ck: 'sc:666', siteId: 666, slug: 'xss', name: 'Xss ' + P, normName: 'xss', plot: P, genres: [P], keywords: [P], cast: [P], creators: [P],
+                url: 'javascript:window.__xss=1', trailer: 'javascript:window.__xss=1', poster: 'x" onerror="window.__xss=1', originalName: P, siteStatus: P,
+                tmdbId: null, imdbId: null, detailAt: Date.now() }); // senza tmdbId: altrimenti si unisce a sc:1 e non compare
+              const items = await db.getAll('library_items');
+              const it = items[0];
+              await db.put('library_items', { ...it, key: 'xss:1', title: 'Xss ' + P, rawTitle: P, tags: [P], notes: P });
+              await db.put('overlay', { ck: 'sc:666', status: 'watching', userTags: [P], note: P, updatedAt: Date.now() });
+              await db.put('saved_queries', { id: 'q_x"><img src=x onerror=window.__xss=1>', name: 'Ricerca ' + P, icon: 'bookmark', color: 'red;background:url(https://example.invalid/x)', query: { all: [] }, sort: 'reco', pinned: true, follow: true, createdAt: Date.now(), updatedAt: Date.now(), order: 0 });
+              return P;
+            }""")
+            xss_routes = ["scopri", "catalogo", "serie/sc%3A666", "libreria/coda", "maratona", "coppia", "libreria", "libreria/tag", "libreria/storico", "mancanti", "ricerche", "esplora", "persone", "statistiche",
+                          "calendario", "cronologia", "universi", "classici", "mondo", "mappa", "wrapped", "stasera", "attivita", "impostazioni/info"]
+            bad = []; shown = []
+            for route in xss_routes:
+                app.goto(base + "#/" + route); app.reload()
+                app.wait_for_timeout(1300)
+                r = app.evaluate("() => ({ x: window.__xss || 0, el: document.querySelectorAll('[data-xss]').length, js: [...document.querySelectorAll('a[href]')].filter(a => /^\\s*javascript:/i.test(a.getAttribute('href'))).length, css: [...document.querySelectorAll('[style]')].filter(n => /example\\.invalid/.test(n.getAttribute('style'))).length })")
+                if r["x"] or r["el"] or r["js"] or r["css"]:
+                    bad.append(f"{route}: {r}")
+                if app.evaluate("() => document.body.innerText.includes('onerror')"):
+                    shown.append(route)
+
+            check("XSS: nessuna pagina esegue o crea HTML dai dati (24 pagine, titoli, trame, tag, ricerche, link)", not bad, "; ".join(bad))
+            need = {"scopri", "catalogo", "serie/sc%3A666", "mancanti", "ricerche"}
+            check("XSS: i dati malevoli compaiono davvero, come testo, nelle pagine principali (il test non passa a vuoto)", need <= set(shown), "mostrati in: " + ", ".join(shown))
+            app.goto(base + "#/serie/sc%3A666"); app.reload(); app.wait_for_timeout(1300)
+            check("XSS: il testo malevolo compare come testo nella scheda", "onerror" in app.inner_text("main"), app.inner_text("main")[:200])
+            app.evaluate("""async () => { const db = await import('/src/db/db.js');
+              for (const [s, k] of [['catalog_titles', 'sc:666'], ['library_items', 'xss:1'], ['overlay', 'sc:666']]) await db.del(s, k);
+              for (const q of await db.getAll('saved_queries')) if (q.id.startsWith('q_x"')) await db.del('saved_queries', q.id); }""")
+
+            app.goto(base + "#/scopri"); app.reload(); app.wait_for_selector("#side [data-act=update]", timeout=10000)
+            side = app.evaluate("() => { const s = document.querySelector('#side'); const f = s.querySelector('.side-foot'); return { over: s.scrollWidth - s.clientWidth, cut: [...f.querySelectorAll('button, a')].filter(b => b.getBoundingClientRect().right > s.getBoundingClientRect().right + 1).length }; }")
+            check("barra laterale: niente scorrimento orizzontale né pulsanti tagliati", side["over"] <= 1 and side["cut"] == 0, str(side))
 
             # App web (stesso codice, senza estensione)
             web_srv = subprocess.Popen([sys.executable, "-I", "-m", "http.server", "8766", "--bind", "127.0.0.1", "--directory", str(ROOT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

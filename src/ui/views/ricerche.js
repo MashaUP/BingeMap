@@ -4,7 +4,7 @@ import { icon } from '../icons.js';
 import { listQueries, saveQuery, deleteQuery } from '../../library/data.js';
 import { presets } from '../../query/presets.js';
 import { describe } from '../../query/engine.js';
-import { encodeObj, decodeObj, fmtNum } from '../../common/util.js';
+import { encodeObj, decodeObj, fmtNum, safeColor } from '../../common/util.js';
 import { appUrl } from '../../platform/platform.js';
 
 const COLORS = ['#6D4AFF', '#2DD4BF', '#FB923C', '#60A5FA', '#F87171', '#A68CFF', '#FBBF24'];
@@ -21,7 +21,7 @@ export async function render(root, { params }, ctx) {
 
   root.innerHTML = `<header class="between"><div><h1>Ricerche salvate</h1><p class="muted" style="margin:4px 0 0">Si aggiornano da sole dopo ogni scansione e ogni import. Con «Segui» attivo segnalano le novità.</p></div>
     <div class="row"><button class="btn" data-import>${icon('link')}Importa una ricerca</button><a class="btn p" href="#/filtri">${icon('plus')}Nuova ricerca</a></div></header>
-    ${qs.length ? `<div class="grid g3">${qs.map((q, i) => `<article class="panel col" style="gap:10px;border-top:3px solid ${e(q.color)}">
+    ${qs.length ? `<div class="grid g3">${qs.map((q, i) => `<article class="panel col" style="gap:10px;border-top:3px solid ${safeColor(q.color)}">
       <div class="between"><a href="#/ricerca/${e(q.id)}" style="font:600 17px Inter,sans-serif;color:var(--text);text-decoration:none" class="row">${icon(q.icon)}${e(q.name)}</a>${q.newIds?.length ? `<span class="s-match small" style="font-weight:600">+${q.newIds.length} nuove</span>` : ''}</div>
       <p class="muted small" style="margin:0">${e(describe(q.query))}</p>
       <div class="row" style="align-items:baseline;gap:8px"><span class="h" style="font-size:30px">${fmtNum(counts[i].total)}</span><span class="muted small">serie</span></div>

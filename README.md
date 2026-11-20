@@ -1,6 +1,6 @@
 # BingeMap
 
-Versione: **1.3.2**
+Versione: **1.3.3**
 
 BingeMap trova le serie del catalogo che non hai ancora visto. Incrocia il catalogo con le liste che hai già in altre app (SIMKL, Refract, Trakt, IMDb e altre), toglie in automatico quello che hai completato e ti lascia combinare generi, anni, tag e voti.
 
@@ -8,7 +8,7 @@ Estensione per Chrome, Brave ed Edge, con un'app completa a tutta pagina. Nessun
 
 ## Installazione
 
-1. Scarica `BingeMap-1.3.2.zip` dalla radice del repository ed estrailo.
+1. Scarica `BingeMap-1.3.3.zip` dalla radice del repository ed estrailo.
 2. Apri `brave://extensions` o `chrome://extensions` e attiva la «Modalità sviluppatore».
 3. Premi «Carica estensione non pacchettizzata» e scegli la cartella `BingeMap`.
 
@@ -45,12 +45,13 @@ Streaming Community non è un servizio autorizzato: AGCOM lo blocca periodicamen
 - Ko-fi: https://ko-fi.com/mashaup
 - Discord: https://discord.gg/EPsbQCuAkx
 
-I link si aggiornano da `links.json` (aumenta `revision` quando li cambi).
+I link (Discord, Ko-fi, guida, segnalazioni) si aggiornano da `links.json`: aumenta `revision` quando li cambi.
 
 ## Sviluppo
 
 - JavaScript a moduli ES, nessuna dipendenza a runtime, nessuna build.
-- `npm install` (solo `fake-indexeddb` per i test), `npm test`, `npm run e2e`, `npm run pack`.
+- `npm ci` (solo strumenti di prova: `fake-indexeddb`, ESLint), `npm test` (controlli, lint, test di unità), `npm run test:e2e`, `npm run build`, `npm run package` (vedi `docs/RELEASE.md`).
+- Problemi e idee: [segnalazioni su GitHub](https://github.com/MashaUP/BingeMap/issues/new/choose).
 - Documentazione tecnica in `docs/`.
 
 Attribuzioni: questo prodotto usa l'API TMDB ma non è approvato né certificato da TMDB. Dati sulla disponibilità: JustWatch.
