@@ -84,7 +84,8 @@ export function titleUrl(settings, id, slug) {
 }
 
 function namesOf(v) {
-  if (!v) return [];
+  // Solo elenchi o testo: un numero (es. created_by = ID di chi ha caricato il titolo sul sito) non è un nome.
+  if (!v || (!Array.isArray(v) && typeof v !== 'string')) return [];
   const arr = Array.isArray(v) ? v : String(v).split(',');
   return arr.map((x) => (typeof x === 'string' ? x : x?.name || x?.title || x?.keyword)).filter(Boolean).map((x) => String(x).trim()).filter(Boolean);
 }
@@ -121,7 +122,7 @@ export function normalizeTitle(raw, settings) {
     recommendations: (raw.recommendations || raw.related || []).map((r) => (typeof r === 'object' ? r.id : r)).filter((x) => x != null),
     trailerUrl: raw.trailers?.[0]?.youtube_id ? `https://www.youtube.com/watch?v=${raw.trailers[0].youtube_id}` : (raw.trailerUrl || null),
     seasonEpisodes: seasonsOf(raw), episodesCount: null,
-    keywords: namesOf(raw.keywords), cast: namesOf(raw.main_actors).slice(0, 8), creators: namesOf(raw.created_by || raw.main_directors).slice(0, 4),
+    keywords: namesOf(raw.keywords), cast: namesOf(raw.main_actors).slice(0, 8), creators: namesOf(Array.isArray(raw.created_by) && raw.created_by.length ? raw.created_by : raw.main_directors).slice(0, 4),
     dubIta: raw.dub_ita == null ? null : raw.dub_ita === true || raw.dub_ita === 1 || raw.dub_ita === '1',
     originalLanguage: raw.original_language || null, siteStatus: raw.status || null,
     providerIds: providerIdsOf(raw),
@@ -143,22 +144,63 @@ export function detailFields(raw, settings) {
   return out;
 }
 
-// URL di una pagina dell'elenco (livello 1). n parte da 0.
+// URL di una pagina dell'elenco (livello 1). n parte da 0; slice è un filtro aggiuntivo (es. 'year=2024').
 // api: elenco JSON paginato (sul sito reale /{lang}/archive con intestazioni XHR, vedi docs/SITE_NOTES.md).
-export function listUrl(settings, n, strategy) {
+export function listUrl(settings, n, strategy, slice = '') {
   const s = settings.sc;
   const langPath = s.lang ? `/${s.lang}` : '';
   const pageVal = s.pageParam === 'page' ? n + 1 : n * s.pageSize;
+  const filter = [s.typeParam, slice].filter(Boolean).join('&');
   if (strategy === 'api') {
     const path = String(s.apiPath || '/{lang}/archive').replace('/{lang}', langPath).replace('{lang}', s.lang || '');
     const lang = s.lang ? `lang=${encodeURIComponent(s.lang)}&` : '';
-    return `${s.origin}${path}?${lang}${s.typeParam}&${s.pageParam}=${pageVal}`;
+    return `${s.origin}${path}?${lang}${filter ? filter + '&' : ''}${s.pageParam}=${pageVal}`;
   }
-  return `${s.origin}${langPath}${s.archivePath}?${s.typeParam}&${s.pageParam}=${pageVal}`;
+  return `${s.origin}${langPath}${s.archivePath}?${filter ? filter + '&' : ''}${s.pageParam}=${pageVal}`;
+}
+
+// Fette dell'archivio. Il sito reale serve al massimo 20 pagine (1 200 titoli) per richiesta: oltre risponde
+// 503 «Page limit reached (20)». Per leggere tutto si legge prima l'elenco senza filtri (le novità e il totale
+// dichiarato), poi ogni anno con il filtro del sito: anni singoli dal 2000 a oggi, decenni prima
+// (sono le voci del menu «Anno» del sito; verificato il 20/11/2026: la somma delle fette = il totale).
+export function listSlices(scSettings, now = new Date()) {
+  const p = scSettings.sliceParam;
+  if (!p) return [''];
+  const out = [''];
+  for (let y = now.getFullYear(); y >= 2000; y--) out.push(`${p}=${y}`);
+  for (let d = 1990; d >= 1910; d -= 10) out.push(`${p}=${d}`);
+  out.push(''); // ultima fetta: di nuovo senza filtri, per i titoli che nessun anno raccoglie (letta solo se ne mancano)
+  return out;
+}
+
+// Limite di pagine raggiunto: il sito lo dice con un 503 e un messaggio esplicito. Restituisce il limite (o null).
+export function pageLimitReached(status, body = '') {
+  if (status !== 503) return null;
+  const m = String(body).slice(0, 300).match(/page limit reached\D*(\d+)?/i);
+  return m ? Number(m[1]) || 0 : null;
 }
 
 // Intestazioni con cui il sito restituisce il JSON invece dell'HTML (come fa la pagina stessa con «carica altri»).
 export const JSON_HEADERS = { 'X-Requested-With': 'XMLHttpRequest', accept: 'application/json' };
+
+// Scheda di un titolo come la chiede l'app del sito quando si naviga (Inertia): solo i dati, senza HTML né script.
+// Con «solo il titolo» sono circa 7 KB invece dei ~430 KB della pagina intera; con gli slider (titoli correlati) ~190 KB.
+// Se la versione dell'app del sito è cambiata il sito risponde 409: si rilegge l'HTML e si impara la versione nuova.
+export function inertiaHeaders(version, related = true) {
+  return {
+    'X-Requested-With': 'XMLHttpRequest', 'X-Inertia': 'true', 'X-Inertia-Version': String(version),
+    'X-Inertia-Partial-Component': 'Titles/Title', 'X-Inertia-Partial-Data': related ? 'title,sliders' : 'title',
+    accept: 'text/html, application/xhtml+xml',
+  };
+}
+
+// Versione dell'app del sito (campo version dei dati della pagina).
+export function pageVersion(body) {
+  if (!body) return null;
+  let d = null;
+  if (/^\s*{/.test(body)) { try { d = JSON.parse(body); } catch { d = null; } } else d = extractPageData(body);
+  return d && typeof d.version === 'string' && d.version ? d.version : null;
+}
 
 // Interpreta la risposta di una pagina dell'elenco (JSON o HTML).
 export function parseList(body, contentType = '') {
@@ -204,6 +246,7 @@ export function blockedReason(status, body = '') {
   if (status === 403) return 'Accesso negato dal sito (403)';
   if (status === 429) return 'Troppe richieste (429): il sito chiede di rallentare';
   if (status >= 500) return `Errore del sito (${status})`;
-  if (/cf-chl|challenge-platform|captcha|g-recaptcha|hcaptcha/i.test(body.slice(0, 20000))) return 'Il sito chiede una verifica (CAPTCHA)';
+  // Le pagine di verifica sono HTML: un JSON di dati (trame, parole chiave) non va scambiato per una verifica.
+  if (!/^\s*[{[]/.test(body) && /cf-chl|challenge-platform|captcha|g-recaptcha|hcaptcha/i.test(body.slice(0, 20000))) return 'Il sito chiede una verifica (CAPTCHA)';
   return null;
 }

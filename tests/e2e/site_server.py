@@ -1,5 +1,8 @@
 """Sito simulato del catalogo per i test end-to-end, con la struttura verificata sul sito reale (docs/SITE_NOTES.md):
-HTML con data-page che Vue toglie dopo l'avvio, elenco JSON paginato in stile Laravel con intestazioni XHR, schede con slider «related»."""
+HTML con data-page che Vue toglie dopo l'avvio, elenco JSON paginato in stile Laravel con intestazioni XHR, schede con slider «related».
+Come il sito reale (20/11/2026): al massimo PAGE_LIMIT pagine per elenco (oltre: 503 «Page limit reached (N)»), filtro year
+(anni singoli dal 2000, decenni prima, valori fuori elenco → 422), schede come dati Inertia (X-Inertia, versione, dati parziali; 409 se la versione è vecchia).
+Il limite qui è 2 pagine (sul sito reale 20) perché il catalogo simulato è piccolo: così si prova davvero la lettura a fette."""
 import html
 import json
 import re
@@ -29,6 +32,9 @@ for n in range(8, 131):
     TITLES.append({"id": n, "slug": f"serie-{n}", "name": f"Serie di prova {n}", "type": "tv", "score": str(5 + (n % 5)), "sub_ita": 0,
                    "seasons_count": 1 + n % 4, "last_air_date": f"{2000 + n % 25}-01-01", "release_date": f"{2000 + n % 25}-01-01",
                    "_detail": {"genres": [{"name": GENRES[n % len(GENRES)]}], "plot": "Trama."}, "images": []})
+PAGE_LIMIT = 2
+VERSION = "x"
+REQUESTS = []
 TITLES.append({"id": 999, "slug": "un-film", "name": "Un film", "type": "movie", "score": "7", "_detail": {}, "images": []})
 
 
@@ -43,8 +49,16 @@ def public(t, detail=False):
 MOUNT = "<script>(function(){var a=document.getElementById('app');var d=JSON.parse(a.getAttribute('data-page'));a.__vue_app__={config:{globalProperties:{$page:d}}};a.removeAttribute('data-page');})();</script>"
 
 
+def year_of(t):
+    return int(str(t.get("release_date") or t.get("last_air_date") or "0")[:4] or 0)
+
+
+def year_ok(y):
+    return (2000 <= y <= 2026) or (1910 <= y < 2000 and y % 10 == 0)
+
+
 def page(component, props, cards=""):
-    data = html.escape(json.dumps({"component": component, "props": props, "url": "/", "version": "x"}), quote=True)
+    data = html.escape(json.dumps({"component": component, "props": props, "url": "/", "version": VERSION}), quote=True)
     return f'<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Catalogo</title></head><body><header><a href="/it/titles/1-dark">Menu Dark</a></header><div id="app" data-page="{data}"><main>{cards}</main></div>{MOUNT}</body></html>'
 
 
@@ -67,12 +81,22 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        REQUESTS.append(self.path)
+        if u.path == "/__requests":
+            return self.send(200, json.dumps(REQUESTS), "application/json")
         if u.path.startswith("/api/"):
             return self.send(404, "not found", "text/plain")
         if u.path in ("/it/archive", "/it/archivio"):
             pool = [t for t in TITLES if q.get("type", [""])[0] in ("", t["type"])]
             if self.headers.get("X-Requested-With") == "XMLHttpRequest":
                 n = max(1, int(q.get("page", ["1"])[0]))
+                if "year" in q:
+                    y = int(q["year"][0] or 0)
+                    if not year_ok(y):
+                        return self.send(422, json.dumps({"message": "The selected year is invalid."}), "application/json")
+                    pool = [t for t in pool if (year_of(t) == y if y >= 2000 else y <= year_of(t) < y + 10)]
+                if n > PAGE_LIMIT:
+                    return self.send(503, json.dumps(f"Page limit reached ({PAGE_LIMIT})"), "application/json")
                 chunk = pool[(n - 1) * 60:n * 60]
                 last = (len(pool) + 59) // 60
                 body = {"current_page": n, "data": [public(t) for t in chunk], "last_page": last, "per_page": 60,
@@ -86,7 +110,19 @@ class H(BaseHTTPRequestHandler):
             if not t:
                 return self.send(404, "no")
             related = [public(x) for x in TITLES if x["id"] in (2, 6, 7) and x["id"] != t["id"]]
-            return self.send(200, page("Titles/Title", {"title": public(t, True), "sliders": [{"name": "related", "titles": related}, {"name": "genre", "titles": []}]}))
+            props = {"title": public(t, True), "sliders": [{"name": "related", "titles": related}, {"name": "genre", "titles": []}]}
+            if self.headers.get("X-Inertia") == "true":
+                if self.headers.get("X-Inertia-Version") != VERSION:
+                    self.send_response(409)
+                    self.send_header("x-inertia-location", self.path)
+                    self.send_header("content-length", "0")
+                    self.end_headers()
+                    return
+                want = [x for x in (self.headers.get("X-Inertia-Partial-Data") or "").split(",") if x]
+                if want:
+                    props = {k: v for k, v in props.items() if k in want}
+                return self.send(200, json.dumps({"component": "Titles/Title", "props": props, "url": self.path, "version": VERSION}), "application/json")
+            return self.send(200, page("Titles/Title", props))
         m = re.match(r"^/img/(\d+)\.svg$", u.path)
         if m:
             return self.send(200, f'<svg xmlns="http://www.w3.org/2000/svg" width="160" height="240"><rect width="160" height="240" fill="#2B2A55"/><text x="10" y="120" fill="#fff">{m.group(1)}</text></svg>', "image/svg+xml")

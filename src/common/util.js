@@ -89,7 +89,7 @@ export function uniq(arr) {
 export function toNumber(v) {
   if (v == null || v === '') return null;
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  const n = Number(String(v).replace(',', '.').replace(/[^0-9.\-]/g, ''));
+  const n = Number(String(v).replace(',', '.').replace(/[^0-9.-]/g, ''));
   return Number.isFinite(n) ? n : null;
 }
 

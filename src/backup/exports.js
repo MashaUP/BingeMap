@@ -38,7 +38,6 @@ export function fullCsv(views) {
 }
 
 const MAL_OUT = { watching: 'Watching', completed: 'Completed', hold: 'On-Hold', dropped: 'Dropped', plan: 'Plan to Watch' };
-const x = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // entries: [{ malId, title, status, rating, episodes, episodesWatched }]
 export function malXml(entries) {

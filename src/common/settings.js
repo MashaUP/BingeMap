@@ -1,5 +1,5 @@
 // Impostazioni dell'app (nel database del profilo). Le chiavi API restano solo in locale.
-import { getSetting, setSetting } from '../db/db.js';
+import { getSetting, atomic } from '../db/db.js';
 
 export const DEFAULTS = {
   tmdbKey: '',
@@ -17,6 +17,11 @@ export const DEFAULTS = {
     titlePath: '/titles',
     delayMs: 1500,
     detailDelayMs: 1500,
+    sliceParam: 'year', // filtro con cui si divide l'archivio in fette (il sito serve al massimo pageLimit pagine per richiesta); '' = nessuna fetta
+    pageLimit: 20, // pagine massime per richiesta dichiarate dal sito («Page limit reached (20)»)
+    detailVia: 'inertia', // inertia (solo i dati della scheda) | html (pagina intera)
+    detailRelated: true, // con i titoli correlati (più pesante: ~190 KB invece di ~7 KB per scheda)
+    inertiaVersion: '', // versione dell'app del sito, imparata da sola
   },
   tmdbProviders: { region: 'IT', ids: [], maxPages: 40 },
   activeCatalog: 'all', // sc | tmdbp | all
@@ -75,11 +80,14 @@ export async function loadSettings() {
   return merge(DEFAULTS, migrate(await getSetting('app', {})));
 }
 
+// Lettura e scrittura nella stessa transazione: due salvataggi contemporanei (popup, motore, dashboard) non si cancellano a vicenda.
 export async function saveSettings(patch) {
-  const cur = await loadSettings();
-  const next = merge(cur, patch);
-  await setSetting('app', next);
-  return next;
+  return atomic(['settings'], async (tx) => {
+    const row = await tx.get('settings', 'app');
+    const next = merge(merge(DEFAULTS, migrate(row ? row.value : {})), patch);
+    tx.put('settings', { key: 'app', value: next, updatedAt: Date.now() });
+    return next;
+  });
 }
 
 export { merge as mergeSettings, migrate as migrateSettings };

@@ -98,7 +98,7 @@ const EN = {
   'Stagioni mancanti': 'Missing seasons', 'Stagioni mancanti nel catalogo': 'Seasons missing from the catalog', 'Chiuse bene': 'Properly ended', 'Doppiate in italiano': 'Dubbed in Italian',
   'Con persone che segui': 'With people you follow', 'Paesi visitati': 'Countries visited', 'Mai provati': 'Never tried', 'I tuoi paesi': 'Your countries', 'Da recuperare': 'To catch up',
   'Esporta verso altre app': 'Export to other apps', 'Leggibilità': 'Readability', 'Dimensione del testo': 'Text size', 'Normale (100%)': 'Normal (100%)', 'Grande (115%)': 'Large (115%)', 'Molto grande (130%)': 'Very large (130%)',
-  'Non seguire più': 'Unfollow', 'Tutti gli universi': 'All universes', 'Finita': 'Finished', 'Iniziata': 'Started', 'Non nel catalogo': 'Not in catalog', 'AniList': 'AniList', 'MyAnimeList': 'MyAnimeList',
+  'Non seguire più': 'Unfollow', 'Tutti gli universi': 'All universes', 'Finita': 'Finished', 'Iniziata': 'Started', 'AniList': 'AniList', 'MyAnimeList': 'MyAnimeList',
   'Senza spoiler': 'Spoiler-free', 'I tuoi abbonamenti': 'Your subscriptions', 'Interfaccia': 'Interface', 'Italiano': 'Italian', 'Inglese': 'English',
 };
 

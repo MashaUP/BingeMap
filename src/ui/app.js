@@ -251,7 +251,8 @@ async function boot() {
         if (!busyUi && !['impostazioni', 'import', 'filtri', 'scorri', 'mappa'].includes(name)) route();
       });
     }
-    if (evt.kind === 'scan') {
+    // Un evento di scansione senza operazione (versioni precedenti del motore) non deve svuotare il riquadro di Attività.
+    if (evt.kind === 'scan' && evt.job) {
       document.dispatchEvent(new CustomEvent('bm-scan', { detail: evt.job }));
       if (['done', 'partial', 'stopped', 'blocked', 'error'].includes(evt.job.status) && evt.job.endedAt && Date.now() - evt.job.endedAt < 5000) store.changed();
     }

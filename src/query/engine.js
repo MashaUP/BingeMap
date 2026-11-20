@@ -5,7 +5,6 @@ import { lowerKey, calendarDays, collator } from '../common/util.js';
 import { STATUS_LABEL } from '../library/status.js';
 import { genreLabel } from '../library/tags.js';
 
-const DAY = 86400000;
 
 // Definizione dei campi: come leggere il valore e come descriverlo.
 export const FIELDS = {

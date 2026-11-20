@@ -1,18 +1,21 @@
 {
   "name": "bingemap",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "private": true,
   "description": "BingeMap: trova le serie del catalogo che non hai ancora visto.",
   "type": "module",
   "license": "UNLICENSED",
   "scripts": {
     "test": "node --test \"tests/unit/*.test.js\"",
-    "check": "node scripts/check.mjs",
+    "check": "node scripts/check.mjs && eslint .",
     "pack": "node scripts/check.mjs && bash scripts/pacchetto.sh",
-    "e2e": "python3 -I tests/e2e/run_e2e.py"
+    "e2e": "python3 -I tests/e2e/run_e2e.py",
+    "lint": "eslint ."
   },
   "devDependencies": {
     "axe-core": "^4.14.1",
-    "fake-indexeddb": "^6.0.0"
+    "eslint": "^9.39.5",
+    "fake-indexeddb": "^6.0.0",
+    "globals": "^15.15.0"
   }
 }

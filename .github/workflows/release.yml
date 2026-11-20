@@ -20,7 +20,7 @@ jobs:
       - name: Dipendenze di sviluppo
         run: npm install --no-audit --no-fund
       - name: Controllo versione e manifest
-        run: node scripts/check.mjs
+        run: node scripts/check.mjs && npx eslint .
       - name: Test unitari
         run: npm test
       - name: Pacchetto

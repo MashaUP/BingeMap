@@ -182,9 +182,14 @@ export async function render(root, { args }, ctx) {
         <label class="field">Percorso schede titolo<input name="titlePath" value="${e(sc.titlePath)}"></label>
         <label class="field">Lingua nel percorso<input name="lang" value="${e(sc.lang)}"></label>
         <label class="field">Pausa tra le richieste (ms, minimo 800)<input name="delayMs" type="number" min="800" value="${sc.delayMs}"></label>
+        <label class="field">Filtro per le fette dell'archivio (vuoto = nessuna)<input name="sliceParam" value="${e(sc.sliceParam)}"></label>
+        <label class="field">Pagine massime per elenco (limite del sito)<input name="pageLimit" type="number" min="0" value="${sc.pageLimit}"></label>
+        <label class="field">Lettura delle schede<select name="detailVia">${[['inertia', 'solo i dati (leggera)'], ['html', 'pagina intera']].map(([v, l]) => `<option value="${v}" ${sc.detailVia === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="check"><input type="checkbox" name="detailRelated" ${sc.detailRelated !== false ? 'checked' : ''}> Leggi anche i titoli correlati (schede più pesanti)</label>
       </div>
       <div class="row"><button class="btn p">Salva</button><button type="button" class="btn" data-reset>Valori predefiniti</button><button type="button" class="btn" data-rematch>Rifai il riconoscimento</button></div>`;
-    f.addEventListener('submit', async (ev) => { ev.preventDefault(); await save({ sc: { strategy: f.strategy.value, apiPath: f.apiPath.value, archivePath: f.archivePath.value, typeParam: f.typeParam.value, pageParam: f.pageParam.value, pageSize: Number(f.pageSize.value) || 60, titlePath: f.titlePath.value, lang: f.lang.value, delayMs: Math.max(800, Number(f.delayMs.value) || 1500) } }); });
+    f.addEventListener('submit', async (ev) => { ev.preventDefault(); await save({ sc: { strategy: f.strategy.value, apiPath: f.apiPath.value, archivePath: f.archivePath.value, typeParam: f.typeParam.value, pageParam: f.pageParam.value, pageSize: Number(f.pageSize.value) || 60, titlePath: f.titlePath.value, lang: f.lang.value, delayMs: Math.max(800, Number(f.delayMs.value) || 1500),
+      sliceParam: f.sliceParam.value.trim(), pageLimit: Math.max(0, Number(f.pageLimit.value) || 0), detailVia: f.detailVia.value, detailRelated: f.detailRelated.checked } }); });
     f.querySelector('[data-reset]').addEventListener('click', async () => { const { origin, lang } = sc; await save({ sc: { ...DEFAULTS.sc, origin, lang } }, 'Valori predefiniti ripristinati'); ctx.rerender(); });
     f.querySelector('[data-rematch]').addEventListener('click', async (ev) => { busy(ev.target, true, 'Riconosco…'); const c = await runMatching(); busy(ev.target, false); toast(`Fatto: ${c.auto + c.manual} riconosciute, ${c.queue} da confermare`, 'ok'); await ctx.store.changed(true); });
   }

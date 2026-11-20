@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { freshDb, cat } from './_setup.js';
-import { openDb, closeDb, dbName, setProfile, getAll, get, put, STORES } from '../../src/db/db.js';
+import { openDb, closeDb, dbName, setProfile, get, STORES } from '../../src/db/db.js';
 import { DEFAULTS, saveSettings } from '../../src/common/settings.js';
 import { buildViews } from '../../src/library/view.js';
 import { runQuery, evalNode, FIELDS } from '../../src/query/engine.js';

@@ -1,7 +1,7 @@
 // Sincronizzazione tramite Google Drive dell'utente (punto 1): cartella nascosta appDataFolder,
 // permesso drive.appdata (non sensibile). Nessun server BingeMap: i dati restano nel Drive dell'utente.
 import { authFlow, redirectUrl, sessionKv, kv } from '../platform/platform.js';
-import { getAll, atomic, getSetting, setSetting } from '../db/db.js';
+import { atomic, getSetting, setSetting } from '../db/db.js';
 import { loadSettings } from '../common/settings.js';
 import { exportAll, PERSONAL, CATALOG } from '../backup/backup.js';
 import { runMatching } from '../match/run.js';

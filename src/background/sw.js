@@ -41,7 +41,7 @@ export async function autoNext(job) {
   const next = scanner.nextAutoKind(job, await loadSettings());
   if (!next) return;
   setTimeout(async () => {
-    try { await scanner.startJob(next, next === 'sc-detail' ? { auto: true } : {}); broadcast({ kind: 'scan', status: 'running' }); }
+    try { const j = await scanner.startJob(next, next === 'sc-detail' ? { auto: true } : {}); broadcast({ kind: 'scan', job: j }); }
     catch (e) { await log('info', 'scan', 'auto', e.message); }
   }, 1500);
 }
@@ -90,13 +90,21 @@ chrome.omnibox?.onInputEntered.addListener((text) => {
   chrome.tabs.create({ url });
 });
 
-async function init() {
+// Avvio del motore, una volta sola per ogni risveglio del service worker. Prima il codice partiva sia dal livello
+// superiore sia da onInstalled/onStartup: due avvii contemporanei riprendevano la stessa scansione due volte e
+// registravano i content script due volte («Duplicate script ID»).
+let ready = null;
+function init() {
+  if (!ready) ready = doInit().catch(async (e) => { ready = null; try { await log('error', 'sw', 'init', e.message); } catch { /* database non disponibile */ } throw e; });
+  return ready;
+}
+async function doInit() {
   setupMenus();
   const p = await kv.get('activeProfile', 'default');
   setProfile(p);
   await openDb();
   await ensureAlarms();
-  await registerSiteScript();
+  try { await registerSiteScript(); } catch (e) { await log('warn', 'site', 'register', e.message); }
   await scanner.resumeInterrupted();
 }
 
@@ -125,11 +133,28 @@ async function registerSiteScript() {
 }
 
 chrome.runtime.onInstalled.addListener(async (d) => {
-  await init();
+  try { await init(); } catch { /* registrato in diagnostica */ }
   if (d.reason === 'install') chrome.tabs.create({ url: chrome.runtime.getURL('src/ui/app.html#/benvenuto') });
 });
-chrome.runtime.onStartup.addListener(() => { init(); });
-init();
+chrome.runtime.onStartup.addListener(() => { init().catch(() => {}); });
+init().catch(() => {});
+
+// Collegamento rimasto in sospeso: la finestra del permesso può chiudere il popup prima che finisca.
+// Il popup salva la richiesta prima di chiedere il permesso e la toglie se riesce a completarla da sé.
+chrome.permissions?.onAdded?.addListener(async (perm) => {
+  try {
+    await new Promise((r) => setTimeout(r, 1500));
+    const { pendingConnect: pc } = await chrome.storage.session.get('pendingConnect');
+    if (!pc || Date.now() - pc.at > 5 * 60000) return;
+    const origin = new URL(pc.url).origin;
+    if (!(perm.origins || []).includes(originPattern(origin))) return;
+    await chrome.storage.session.remove('pendingConnect');
+    await init();
+    const r = await handlers['site.connect'](pc);
+    notify('bm-connect', 'BingeMap collegato', r.autoStarted ? 'Sto leggendo tutto l\'archivio delle serie: continua da solo.' : `Trovate ${r.found} serie nella pagina.`);
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/ui/app.html#/attivita') });
+  } catch (e) { await log('warn', 'site', 'pending-connect', e.message); }
+});
 
 chrome.alarms.onAlarm.addListener(async (a) => {
   const s = await loadSettings();
@@ -159,7 +184,7 @@ chrome.alarms.onAlarm.addListener(async (a) => {
 });
 
 chrome.notifications?.onClicked.addListener((id) => {
-  const hash = id.startsWith('bm-q-') ? `/ricerca/${id.slice(5)}` : id.startsWith('bm-t-') ? `/serie/${encodeURIComponent(id.slice(5))}` : id === 'bm-renewals' ? '/calendario' : id === 'bm-missing' ? '/mancanti' : id === 'bm-update' ? '/impostazioni' : id === 'bm-backup' ? '/attivita' : '/scopri';
+  const hash = id.startsWith('bm-q-') ? `/ricerca/${id.slice(5)}` : id.startsWith('bm-t-') ? `/serie/${encodeURIComponent(id.slice(5))}` : id === 'bm-renewals' ? '/calendario' : id === 'bm-missing' ? '/mancanti' : id === 'bm-update' ? '/impostazioni' : id === 'bm-backup' || id === 'bm-connect' ? '/attivita' : '/scopri';
   chrome.tabs.create({ url: chrome.runtime.getURL('src/ui/app.html#' + hash) });
 });
 
@@ -196,7 +221,7 @@ async function afterCatalogChange(snap) {
     for (const v of fresh.slice(0, 3)) notify(`bm-t-${v.ck}`, `Nuova serie con ${v.followedPeople[0]}`, `${v.name}${v.year ? ` (${v.year})` : ''} è arrivata nel catalogo.`);
     if (fresh.length) await kv.set('followNotified', [...done, ...fresh.map((v) => v.ck)].slice(-500));
   }
-  const newCount = (snap.added || []).length;
+  const newCount = snap.first ? 0 : (snap.added || []).length;
   if (newCount || totalNew) await kv.set('badgeNew', (await kv.get('badgeNew', 0)) + newCount);
   await updateBadge();
 }
@@ -220,6 +245,7 @@ async function viewsBySite(fresh = false) {
 }
 function invalidate() { viewCache = { at: 0, bySite: null, views: null }; }
 
+const NO_WAIT = new Set(['app.version', 'app.reload', 'ping']);
 const handlers = {
   async 'app.version'() { return VERSION; },
   // Riavvio dell'estensione: dopo aver sostituito la cartella con la versione nuova, Chrome rilegge i file dal disco.
@@ -235,54 +261,11 @@ const handlers = {
   async 'site.register'() { await registerSiteScript(); return true; },
 
   // Collega il sito dalla scheda aperta: verifica dell'impronta della pagina, non del dominio.
-  async 'site.connect'({ tabId, url, html: given }) {
-    const u = new URL(url);
-    const origin = u.origin;
-    if (!(await chrome.permissions.contains({ origins: [originPattern(origin)] }))) throw new Error('Permesso per il sito non concesso');
-    // Sul sito reale Vue toglie l'attributo data-page dopo l'avvio. Ordine dei tentativi:
-    // 1) i dati della pagina dall'app (mondo della pagina), 2) l'attributo nel DOM, 3) l'HTML grezzo dello stesso indirizzo.
-    const diag = [`popup: ${given ? (sc.fingerprint(given).ok ? 'ok' : 'dati non validi') : 'niente'}`];
-    let html = given && sc.fingerprint(given).ok ? given : null;
-    if (!html) try {
-      const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: () => {
-        try { const p = document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$page; return p ? JSON.stringify({ component: p.component, props: { titles: p.props.titles, title: p.props.title, totalCount: p.props.totalCount, sliders: p.props.sliders } }) : null; } catch (e) { return null; }
-      } });
-      if (result) html = `<div id="app" data-page="${result.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></div>`;
-      diag.push(`app della pagina: ${result ? 'ok' : 'niente'}`);
-    } catch (e) { diag.push(`app della pagina: ${e.message}`); }
-    if (!html || !sc.fingerprint(html).ok) {
-      try {
-        const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, func: async () => {
-          if (document.querySelector('[data-page]')) return document.documentElement.outerHTML;
-          try { const r = await fetch(location.href, { credentials: 'include' }); return await r.text(); } catch (e) { return document.documentElement.outerHTML; }
-        } });
-        html = result;
-        diag.push(`HTML: ${String(result || '').length} caratteri, data-page ${/data-page/.test(result || '') ? 'presente' : 'assente'}`);
-      } catch (e) { diag.push(`HTML: ${e.message}`); }
-    }
-    const fp = sc.fingerprint(html);
-    if (!fp.ok) {
-      await log('warn', 'site', 'connect', diag.join(' · '));
-      throw new Error(`${fp.reason} Apri la pagina dell'archivio o della ricerca delle serie e riprova. (${VERSION} · ${diag.join(' · ')})`);
-    }
-    const seg = u.pathname.split('/').filter(Boolean);
-    const lang = seg[0] && /^[a-z]{2}$/.test(seg[0]) ? seg[0] : '';
-    const patch = { sc: { origin, lang } };
-    const archiveSeg = seg.find((x) => /archiv/i.test(x));
-    if (archiveSeg) patch.sc.archivePath = '/' + archiveSeg;
-    await saveSettings(patch);
-    await registerSiteScript();
-    await log('info', 'site', 'connect', `titoli=${fp.titles}`);
-    // Raccolta passiva della pagina attuale.
-    const parsed = sc.parseList(html);
-    if (parsed.titles.length) await harvest(parsed.titles);
-    // Scansione automatica di tutto l'archivio appena collegato.
-    let autoStarted = false;
-    const st = await loadSettings();
-    if (st.autoFullScan && !(await scanner.activeJob?.())) {
-      try { await scanner.startJob('sc-list', { mode: 'full' }); autoStarted = true; broadcast({ kind: 'scan', status: 'running' }); } catch { /* un'altra operazione è in corso */ }
-    }
-    return { ok: true, origin, lang, found: fp.titles, autoStarted, total: parsed.total || null };
+  'site.connect'(msg) {
+    const origin = new URL(msg.url).origin;
+    // Doppio clic o popup + collegamento in sospeso: una sola esecuzione per sito alla volta.
+    if (!connecting.has(origin)) connecting.set(origin, connectSite(msg).finally(() => connecting.delete(origin)));
+    return connecting.get(origin);
   },
 
   // Il content script manda i titoli delle pagine visitate: si aggiungono senza mai segnare spariti.
@@ -314,6 +297,66 @@ const handlers = {
   async 'update.check'() { return checkUpdate(); },
 };
 
+// Collega il sito dalla scheda aperta: verifica dell'impronta della pagina, non del dominio.
+const connecting = new Map(); // origine → collegamento in corso
+function readPageInMainWorld() {
+  try { const p = document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$page; return p ? JSON.stringify({ component: p.component, version: p.version, props: { titles: p.props.titles, title: p.props.title, totalCount: p.props.totalCount, sliders: p.props.sliders } }) : null; } catch (e) { return null; }
+}
+async function connectSite({ tabId, url, html: given }) {
+  const u = new URL(url);
+  const origin = u.origin;
+  if (!(await chrome.permissions.contains({ origins: [originPattern(origin)] }))) throw new Error('Permesso per il sito non concesso');
+  // Sul sito reale Vue toglie l'attributo data-page dopo l'avvio. Ordine dei tentativi:
+  // 0) i dati letti dal popup, 1) i dati della pagina dall'app (mondo della pagina), 2) l'attributo nel DOM, 3) l'HTML grezzo dello stesso indirizzo.
+  const diag = [`popup: ${given ? (sc.fingerprint(given).ok ? 'ok' : 'dati non validi') : 'niente'}`];
+  let html = given && sc.fingerprint(given).ok ? given : null;
+  if (!html) try {
+    const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: readPageInMainWorld });
+    if (result) html = `<div id="app" data-page="${result.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></div>`;
+    diag.push(`app della pagina: ${result ? 'ok' : 'niente'}`);
+  } catch (e) { diag.push(`app della pagina: ${e.message}`); }
+  if (!html || !sc.fingerprint(html).ok) {
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, func: async () => {
+        if (document.querySelector('[data-page]')) return document.documentElement.outerHTML;
+        try { const r = await fetch(location.href, { credentials: 'include' }); return await r.text(); } catch (e) { return document.documentElement.outerHTML; }
+      } });
+      html = result;
+      diag.push(`HTML: ${String(result || '').length} caratteri, data-page ${/data-page/.test(result || '') ? 'presente' : 'assente'}`);
+    } catch (e) { diag.push(`HTML: ${e.message}`); }
+  }
+  const fp = sc.fingerprint(html);
+  if (!fp.ok) {
+    await log('warn', 'site', 'connect', diag.join(' · '));
+    throw new Error(`${fp.reason} Apri la pagina dell'archivio o della ricerca delle serie e riprova. (${VERSION} · ${diag.join(' · ')})`);
+  }
+  const seg = u.pathname.split('/').filter(Boolean);
+  const lang = seg[0] && /^[a-z]{2}$/.test(seg[0]) ? seg[0] : '';
+  const patch = { sc: { origin, lang } };
+  const archiveSeg = seg.find((x) => /archiv/i.test(x));
+  if (archiveSeg) patch.sc.archivePath = '/' + archiveSeg;
+  const version = sc.pageVersion(html);
+  if (version) patch.sc.inertiaVersion = version;
+  await saveSettings(patch);
+  invalidate();
+  try { await registerSiteScript(); } catch (e) { diag.push(`script del sito: ${e.message}`); await log('warn', 'site', 'register', e.message); }
+  await log('info', 'site', 'connect', `titoli=${fp.titles} · ${diag.join(' · ')}`);
+  // Raccolta passiva della pagina attuale.
+  const parsed = sc.parseList(html);
+  if (parsed.titles.length) await harvest(parsed.titles);
+  // Scansione automatica di tutto l'archivio appena collegato (o ripresa di quella in pausa).
+  let autoStarted = false; let busy = false;
+  const st = await loadSettings();
+  if (st.autoFullScan) {
+    try {
+      const act = await scanner.activeJob();
+      const j = !act ? await scanner.startJob('sc-list', { mode: 'full' }) : act.status === 'paused' && act.kind.startsWith('sc-') ? await scanner.resumeJob(act.id, 'Ripresa dopo il collegamento del sito') : null;
+      if (j) { autoStarted = true; broadcast({ kind: 'scan', job: j }); } else busy = !!act;
+    } catch (e) { busy = true; await log('info', 'site', 'connect-scan', e.message); }
+  }
+  return { ok: true, origin, lang, found: fp.titles, autoStarted, busy };
+}
+
 async function harvest(rawTitles) {
   const s = await loadSettings();
   const recs = rawTitles.map((t) => sc.normalizeTitle(t, s)).filter((r) => r.type === 'tv' && r.name);
@@ -339,7 +382,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.__event) return false;
   const fn = handlers[msg.type];
   if (!fn) return false;
-  Promise.resolve().then(() => fn(msg, sender)).then((r) => sendResponse(r ?? null)).catch(async (e) => {
+  // I messaggi che toccano i dati aspettano l'avvio (profilo attivo e database aperti); versione e riavvio rispondono subito.
+  const wait = NO_WAIT.has(msg.type) ? Promise.resolve() : init().catch(() => {});
+  wait.then(() => fn(msg, sender)).then((r) => sendResponse(r ?? null)).catch(async (e) => {
     await log('error', 'sw', msg.type, e.message);
     sendResponse({ __error: e.message });
   });

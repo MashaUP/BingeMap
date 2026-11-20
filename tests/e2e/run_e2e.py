@@ -134,9 +134,20 @@ def main():
             check("sito simulato: data-page tolto dopo l'avvio come sul sito reale", site.evaluate("() => !document.querySelector('[data-page]') && !!document.querySelector('#app').__vue_app__"))
             send = lambda msg: app.evaluate("m => chrome.runtime.sendMessage(m)", msg)
             tab_id = app.evaluate("async (u) => (await chrome.tabs.query({})).find(t => (t.url || '').startsWith(u)).id", SITE)
-            r = send({"type": "site.connect", "tabId": tab_id, "url": site.url})
-            check("collegamento del sito dalla scheda", r and r.get("ok"), str(r))
-            check("raccolta passiva della pagina", r and r.get("found") == 60, str(r))
+            # Collegamento dal popup, con un clic vero su «Usa questa scheda» (il guasto della 1.3.1 stava proprio qui).
+            popc = watch(ctx.new_page())
+            popc.set_viewport_size({"width": 380, "height": 600})
+            popc.goto(f"chrome-extension://{ext_id}/src/ui/popup.html?tab={tab_id}")
+            popc.wait_for_selector("[data-connect]", timeout=10000)
+            popc.click("[data-connect]")
+            popc.wait_for_selector("[data-msg] .s-match, [data-msg] .s-drop", timeout=15000)
+            pmsg = popc.inner_text("[data-msg]")
+            check("popup: «Usa questa scheda» collega il sito", "Collegato" in pmsg, pmsg[:300])
+            popc.close()
+            r = {"ok": "Collegato" in pmsg, "autoStarted": "Sto leggendo tutto" in pmsg}
+            sset = app.evaluate("() => import('/src/common/settings.js').then(m => m.loadSettings()).then(s => s.sc)")
+            check("collegamento: sito e versione dell'app del sito salvati", sset["origin"] == SITE and sset.get("inertiaVersion") == "x", str({k: sset.get(k) for k in ("origin", "inertiaVersion")}))
+            check("raccolta passiva della pagina", app.evaluate("async () => { const db = await new Promise(r => { const q = indexedDB.open('bingemap'); q.onsuccess = () => r(q.result); }); return await new Promise(r => { const q = db.transaction('catalog_titles').objectStore('catalog_titles').count(); q.onsuccess = () => r(q.result); }); }") >= 60)
 
             check("collegamento: lettura di tutto l'archivio partita da sola", r and r.get("autoStarted"), str(r))
             if not (r and r.get("autoStarted")):
@@ -162,12 +173,19 @@ def main():
             check("scansione completa", last["status"] == "done" and last["complete"], f"{last['status']} {last.get('error')} trovate={last.get('titlesFound')}")
             check("130 serie, film esclusi", last.get("titlesFound") == 130, str(last.get("titlesFound")))
             check("strategia: elenco JSON paginato con intestazioni XHR", last.get("strategy") == "api", str(last.get("strategy")))
+            reqs = json.loads(site.evaluate("u => fetch(u).then(r => r.text())", SITE + "/__requests"))
+            lst = [x for x in reqs if x.startswith("/it/archive?lang=")]
+            check("elenco a fette: letto anno per anno oltre il limite di pagine del sito", any("year=" in x for x in lst) and last.get("pageLimit") == 2, f"pageLimit={last.get('pageLimit')} richieste={len(lst)}")
+            check("elenco a fette: al massimo una richiesta oltre il limite", sum(1 for x in lst if "page=3" in x) <= 1, str([x for x in lst if "page=3" in x]))
 
             r = send({"type": "scan.start", "kind": "sc-detail", "mode": "full", "opts": {"cks": ["sc:1", "sc:2", "sc:3"]}})
             for _ in range(60):
                 if not send({"type": "scan.active"}):
                     break
                 time.sleep(0.5)
+            reqs = json.loads(site.evaluate("u => fetch(u).then(r => r.text())", SITE + "/__requests"))
+            d2 = db_get(app, "catalog_titles", "sc:2")
+            check("schede lette come dati della pagina (Inertia) e complete", d2 and d2.get("tmdbId") == 125988 and d2.get("episodesCount") == 16 and 6 in (d2.get("recommendations") or []), str({k: (d2 or {}).get(k) for k in ("tmdbId", "episodesCount", "recommendations")}))
 
             # Import CSV dall'interfaccia
             app.goto(base + "#/import/csv")
@@ -509,7 +527,8 @@ def main():
             # La ripresa parte all'avvio del browser; se Chrome non lancia onStartup ci pensa l'allarme «resume».
             pg.evaluate("() => chrome.runtime.sendMessage({ type: 'scan.resume', id: null }).catch(() => null)")
             job2 = None
-            for _ in range(120):
+            # Dalla 1.3.2 l'elenco si legge a fette (un anno per richiesta, con la pausa di 2,5 s impostata sopra): ~40 richieste.
+            for _ in range(320):
                 jobs = {x["id"]: x for x in db_jobs(pg)}
                 job2 = jobs.get(started)
                 if job2 and job2["status"] not in ("running", "interrupted", "paused"):

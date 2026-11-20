@@ -21,7 +21,6 @@ import { parseMalXml as reparse } from '../../src/import/anime.js';
 import { readFileSync } from 'node:fs';
 
 const S = { ...DEFAULTS };
-const DAY = 86400000;
 const P = (id) => presets({}).find((p) => p.id === id).query;
 const item = (key, title, status, extra = {}) => ({ key, source: 'csv', title, status, tags: [], lists: [], updatedAt: 1, ...extra });
 const auto = (itemKey, ck) => ({ key: `sc|${itemKey}`, itemKey, catalog: 'sc', ck, state: 'auto', confidence: 100 });

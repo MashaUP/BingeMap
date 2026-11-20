@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.3.2] - 2026-11-20
+
+Audit di stabilità: dettagli in `docs/DEBUG_AUDIT.md`.
+
+### Correzioni
+- **«Usa questa scheda» non collegava niente** (1.3.1): un nome fuori portata nel popup bloccava il clic subito dopo il permesso. Ora il collegamento parte; se la finestra del permesso chiude il popup, lo completa il motore. Doppio clic: un solo collegamento.
+- **La scansione completa leggeva al massimo 1 200 serie su oltre 5 000**: il sito serve al massimo 20 pagine per elenco e oltre risponde 503 «Page limit reached (20)», che BingeMap prendeva per un blocco. Ora l'archivio si legge a fette, anno per anno (come il menu «Anno» del sito): verificato sul sito vero, la somma delle fette dà tutte le serie. Un filtro rifiutato salta solo la sua fetta; se il sito ignorasse il filtro BingeMap non rilegge l'elenco per ogni anno.
+- Le schede dei titoli e i metadati TMDB, ripresi dopo una pausa o una chiusura del browser, saltavano titoli: l'elenco da leggere ora si fissa al primo avvio.
+- All'avvio del browser la stessa scansione poteva partire due volte (doppie richieste al sito): avvio del motore e riprese ora avvengono una volta sola.
+- Le schede si leggevano dall'indirizzo salvato, anche se il sito aveva cambiato dominio: ora dal sito collegato.
+- Due salvataggi contemporanei delle impostazioni potevano cancellarsi a vicenda.
+- La prima scansione completa contava tutte le serie come «novità» nel badge e nel popup.
+- Dopo un riavvio di BingeMap le schede del sito già aperte davano errori a ripetizione.
+- Un avviso di scansione senza dati svuotava il riquadro dell'operazione in Attività.
+
+### Miglioramenti
+- Schede lette come dati della pagina (come fa il sito quando si naviga) invece della pagina intera: circa la metà dei dati con i titoli correlati, una frazione senza. Se il sito cambia versione si torna da soli alla pagina intera.
+- Impostazioni › Avanzate: filtro delle fette, pagine massime per elenco, modo di lettura delle schede, titoli correlati sì/no.
+- Controllo statico del codice (`npm run lint`, anche nella release automatica) e nuovi test, tra cui il collegamento con un clic vero nel popup.
+
 ## [1.3.1] - 2026-11-20
 
 ### Correzioni

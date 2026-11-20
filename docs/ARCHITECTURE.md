@@ -56,3 +56,13 @@ Tre strati mai mescolati: catalogo (`catalog_*`, `scan_*`, `tmdb_cache`), librer
 - Lettura automatica: alla fine di ogni operazione lo scanner chiama `afterJob`; `nextAutoKind()` decide il passo successivo (elenco → schede → TMDB).
 - Collegamento: prima i dati della pagina letti nel mondo della pagina (`executeScript` con `world: 'MAIN'`), poi l'HTML.
 - Nota sui test: in Chrome automatizzato un'estensione caricata da riga di comando, dopo `runtime.reload()`, viene scaricata ma non ricaricata; il test verifica che il riavvio venga eseguito.
+
+## Correzioni della 1.3.2 (audit)
+
+- **Elenco a fette** (`scanner.runScList`, `sc.listSlices`): fetta 0 = prima pagina senza filtri (totale e novità); se l'elenco intero sta entro `pageLimit` si legge così, altrimenti una fetta per anno e per decennio, poi un'ultima passata senza filtri solo se mancano titoli. Cursore: `{ slices, slice, page, seen, unsliced, tailFrom }`. Il 503 «Page limit» chiude la fetta (`sc.pageLimitReached`), il 422 la salta, un filtro ignorato fa abbandonare le fette.
+- **Elenchi da leggere fissati nel cursore** (`cursor.cks`) per schede e TMDB: la ripresa continua dallo stesso punto dello stesso elenco.
+- **Operazioni senza doppioni**: `startJob` passa da un lucchetto; `resumeJob` prenota l'operazione in modo sincrono prima di ogni attesa; il service worker si avvia una volta sola (`init()` restituisce sempre la stessa promessa) e i messaggi che toccano i dati la aspettano.
+- **Schede come dati Inertia** (`sc.inertiaHeaders`, `sc.pageVersion`): versione imparata al collegamento o dalla prima pagina HTML, 409 → HTML.
+- **Collegamento**: il popup legge i dati della pagina prima di chiedere il permesso e lascia la richiesta in `chrome.storage.session` (`pendingConnect`); `permissions.onAdded` nel motore la completa se il popup si è chiuso. `site.connect` è unico per sito (`connecting`).
+- **Impostazioni salvate in una sola transazione** (`saveSettings` con `atomic`).
+- **Controllo statico**: `eslint.config.js`, `npm run lint`; `npm run check` e la release automatica lo eseguono.

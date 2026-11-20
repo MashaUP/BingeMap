@@ -105,14 +105,21 @@
     setTimeout(() => d.remove(), 8000);
   }
 
-  let t = null;
-  const run = () => { clearTimeout(t); t = setTimeout(() => { harvest(); badges(); }, 600); };
+  // Dopo un riavvio o un aggiornamento di BingeMap questo script resta nella pagina ma non può più parlare con
+  // l'estensione (chrome.runtime.sendMessage lancia «Extension context invalidated»): si spegne invece di dare errori.
+  const alive = () => { try { return !!chrome.runtime?.id; } catch (e) { return false; } };
+  let t = null; let obs = null;
+  const run = () => {
+    if (!alive()) { obs?.disconnect(); window.removeEventListener('popstate', run); return; }
+    clearTimeout(t); t = setTimeout(() => { if (!alive()) return; try { harvest(); badges(); } catch (e) { /* contesto chiuso */ } }, 600);
+  };
   run();
   const ours = (n) => n.nodeType === 1 && (n.classList.contains('bm-badge') || n.id === 'bm-outdated');
-  new MutationObserver((muts) => {
+  obs = new MutationObserver((muts) => {
     const foreign = muts.some((m) => [...m.addedNodes, ...m.removedNodes].some((n) => !ours(n)));
     if (foreign) run();
-  }).observe(document.body, { childList: true, subtree: true });
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
   window.addEventListener('popstate', run);
   chrome.runtime.onMessage.addListener((msg) => { if (msg && msg.__event && msg.kind === 'data') run(); });
 })();

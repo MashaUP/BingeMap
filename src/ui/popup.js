@@ -16,7 +16,9 @@ const app = (hash = '') => chrome.tabs.create({ url: chrome.runtime.getURL('src/
 
 async function main() {
   setProfile(await kv.get('activeProfile', 'default'));
-  const [s, L, [tab]] = await Promise.all([loadSettings(), getLinks(), chrome.tabs.query({ active: true, currentWindow: true })]);
+  // ?tab=<id>: scheda indicata esplicitamente (test automatici e diagnostica); altrimenti la scheda attiva.
+  const forced = Number(new URLSearchParams(location.search).get('tab')) || null;
+  const [s, L, [tab]] = await Promise.all([loadSettings(), getLinks(), forced ? chrome.tabs.get(forced).then((t) => [t]) : chrome.tabs.query({ active: true, currentWindow: true })]);
   document.documentElement.dataset.theme = s.theme === 'light' ? 'light' : 'dark';
   setLang(s.lang);
   document.documentElement.dataset.contrast = s.contrast === 'high' ? 'high' : 'normal';
@@ -78,45 +80,65 @@ async function main() {
     <footer><button class="btn sm" style="flex:1" data-update>${icon('refresh', 14)}Cerca aggiornamento</button> <button class="ibtn" data-restart aria-label="Riavvia BingeMap" title="Riavvia BingeMap (dopo aver copiato la cartella nuova)">${icon('power', 16)}</button><a class="ibtn" href="${e(L.kofi)}" target="_blank" rel="noopener" aria-label="Ko-fi">${icon('heart', 16)}</a><a class="ibtn" href="${e(L.discord)}" target="_blank" rel="noopener" aria-label="Discord">${icon('chat', 16)}</a></footer>
     <p class="muted small" data-versions style="margin:0;padding:0 16px 12px;text-align:center">Versione ${VERSION} · motore ${swVersion === 'old' ? 'precedente alla 1.1.0' : e(swVersion)}${stale === 'restart' ? ' · <b class="s-drop">serve il riavvio</b>' : ''}</p>`;
 
-  cur = { tab, url, origin };
+  cur = { tab, url, origin, stale };
   translateTree(pop);
 }
 
 let cur = {};
 pop.addEventListener('click', async (ev) => {
-    const { tab, url, origin } = cur;
+    const { tab, url, origin, stale } = cur;
     const b = ev.target.closest('button'); if (!b) return;
     if (b.hasAttribute('data-open')) return app('/scopri');
     if (b.dataset.go) return app(b.dataset.go);
     if (b.hasAttribute('data-restart')) { restartExtension(); return; }
     if (b.dataset.detail) return app('/serie/' + encodeURIComponent(b.dataset.detail));
-    if (b.hasAttribute('data-scan')) { await send('scan.start', { kind: 'sc-list', mode: 'update' }); return app('/attivita'); }
+    if (b.hasAttribute('data-scan')) { try { await send('scan.start', { kind: 'sc-list', mode: 'update' }); return app('/attivita'); } catch (err) { alertMsg(err.message); return; } }
     if (b.hasAttribute('data-update')) { const u = await checkUpdate(); b.textContent = u.error ? 'Controllo non riuscito' : u.available ? `Nuova versione ${u.latest}` : 'Sei aggiornato'; if (u.available) app('/impostazioni/info'); return; }
     if (b.dataset.watched) { await send('overlay.set', { ck: b.dataset.watched, patch: { status: b.dataset.st === 'completed' ? 'none' : 'completed' } }); return main(); }
     if (b.dataset.next) { try { await send('nextup.set', { ck: b.dataset.next, on: b.dataset.on !== '1' }); } catch (err) { alertMsg(err.message); } return main(); }
     if (b.hasAttribute('data-connect')) {
-      // La richiesta di permesso deve partire dal clic dell'utente.
-      const ok = await chrome.permissions.request({ origins: [originPattern(origin)] });
       const msg = pop.querySelector('[data-msg]');
-      if (!ok) { msg.innerHTML = '<span class="s-drop">Permesso non concesso.</span>'; return; }
       if (stale === 'restart') { msg.innerHTML = '<span class="s-drop">Prima premi «Riavvia BingeMap»: è ancora attiva la versione precedente.</span>'; return; }
-      try {
-        // I dati della pagina li legge direttamente il popup (permesso della scheda attiva), poi li passa al motore.
-        let html = null;
-        try {
-          const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: () => {
-            try { const p = document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$page; return p ? JSON.stringify({ component: p.component, props: { titles: p.props.titles, title: p.props.title, totalCount: p.props.totalCount, sliders: p.props.sliders } }) : null; } catch (err) { return null; }
-          } });
-          if (result) html = `<div id="app" data-page="${result.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></div>`;
-        } catch { /* lo legge il motore */ }
-        const r = await send('site.connect', { tabId: tab.id, url, html });
-        msg.innerHTML = r.autoStarted
-          ? `<span class="s-match">Collegato. Sto leggendo tutto l'archivio delle serie: prima l'elenco (2–3 minuti), poi le schede di ogni serie, con calma. Puoi chiudere il popup: continua da solo.</span>`
-          : `<span class="s-match">Collegato: trovate ${fmtNum(r.found)} serie in questa pagina. Avvia la scansione da Attività.</span>`;
-        setTimeout(() => app('/attivita'), 1400);
-      } catch (err) { msg.innerHTML = `<span class="s-drop">${e(err.message)}</span>`; }
+      if (b.disabled) return;
+      b.disabled = true;
+      try { await connect(b, msg, tab, url, origin); } finally { b.disabled = false; }
     }
 });
+
+// Collegamento del sito. I dati della pagina li legge il popup (permesso della scheda attiva, concesso dal clic sull'icona)
+// e li passa al motore. Se il permesso del sito manca si chiede ora; su alcuni sistemi la finestra del permesso chiude il popup:
+// per questo la richiesta di collegamento resta in sospeso nel motore, che la completa appena il permesso arriva.
+async function connect(b, msg, tab, url, origin) {
+  msg.innerHTML = '<span class="muted">Collego…</span>';
+  let html = null;
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: readPage });
+    if (result) html = `<div id="app" data-page="${result.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></div>`;
+  } catch { /* lo legge il motore */ }
+  const pattern = originPattern(origin);
+  if (!(await chrome.permissions.contains({ origins: [pattern] }))) {
+    await chrome.storage.session.set({ pendingConnect: { tabId: tab.id, url, html, at: Date.now() } });
+    // La richiesta di permesso deve partire dal clic dell'utente.
+    const ok = await chrome.permissions.request({ origins: [pattern] }).catch(() => false);
+    await chrome.storage.session.remove('pendingConnect');
+    if (!ok) { msg.innerHTML = '<span class="s-drop">Permesso non concesso: senza, BingeMap non può leggere l\'archivio.</span>'; return; }
+  }
+  try {
+    const r = await send('site.connect', { tabId: tab.id, url, html });
+    msg.innerHTML = r.autoStarted
+      ? `<span class="s-match">Collegato. Sto leggendo tutto l'archivio delle serie: prima l'elenco (qualche minuto), poi le schede di ogni serie, con calma. Puoi chiudere il popup: continua da solo.</span>`
+      : `<span class="s-match">Collegato: trovate ${fmtNum(r.found)} serie in questa pagina.${r.busy ? ' C\'è già un\'operazione in corso: la vedi in Attività.' : ' Avvia la scansione da Attività.'}</span>`;
+    setTimeout(() => app('/attivita'), 1400);
+  } catch (err) { msg.innerHTML = `<span class="s-drop">${e(err.message)}</span>`; }
+}
+
+// Eseguita nel mondo della pagina: i dati che l'app Vue/Inertia del sito ha già caricato (sola lettura).
+function readPage() {
+  try {
+    const p = document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$page;
+    return p ? JSON.stringify({ component: p.component, version: p.version, props: { titles: p.props.titles, title: p.props.title, totalCount: p.props.totalCount, sliders: p.props.sliders } }) : null;
+  } catch (err) { return null; }
+}
 
 function alertMsg(t) { const d = document.createElement('div'); d.className = 'notice err small'; d.style.margin = '0 16px 12px'; d.textContent = t; pop.appendChild(d); }
 

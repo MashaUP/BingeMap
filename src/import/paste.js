@@ -8,7 +8,7 @@ const PLATFORM = /\s*[([]?\s*(?:su|on|disponibile su|available on)\s+(?:netflix|
 export function extractTitles(text) {
   const out = []; const seen = new Set();
   for (let line of String(text || '').split(/\r?\n/)) {
-    line = line.replace(/ /g, ' ').trim();
+    line = line.replace(/\u00a0/g, ' ').trim();
     if (!line || line.length > 160 || NOISE.test(line)) continue;
     // Numerazioni e punti elenco: «1.», «#1», «1)», «10 -», «•», «-», «*».
     line = line.replace(/^(?:#?\d{1,3}\s*[.)\]:–—-]?\s+|[•·*▪►◆–—-]\s+)/, '').trim();

@@ -28,7 +28,7 @@ export async function render(root, { name, args, params }, ctx) {
       <p class="muted" style="margin:6px 0 0">${e(describe(q.query))} · ${fmtNum(res.total)} serie${newIds.size ? ` · <span class="s-match">${newIds.size} nuove dall'ultima volta</span>` : ''}</p></div>
       <div class="row"><select data-sort aria-label="Ordina">${Object.entries(SORTS).map(([k, s]) => `<option value="${k}" ${k === sort ? 'selected' : ''}>${e(s.label)}</option>`).join('')}</select>
       <button class="btn" data-filters>${icon('filter', 16)}Modifica filtri</button><button class="btn p" data-surprise>${icon('dice', 16)}Sorprendimi da qui</button>
-      ${newIds.size && name !== 'preset' ? '<button class="btn" data-seen>Segna le novità come viste</button>' : ''}<button class="btn" data-export>${icon('download', 16)}CSV</button><button class="btn" data-refract title="Formato per l\'import CSV di Refract">${icon('download', 16)}Per Refract</button></div></header>
+      ${newIds.size && name !== 'preset' ? '<button class="btn" data-seen>Segna le novità come viste</button>' : ''}<button class="btn" data-export>${icon('download', 16)}CSV</button><button class="btn" data-refract title="Formato per l'import CSV di Refract">${icon('download', 16)}Per Refract</button></div></header>
       <ol class="col" style="list-style:none;margin:0;padding:0;gap:12px">${full.map((v) => {
         const w = why.get(v.ck) || [];
         return `<li class="card row" style="padding:14px;gap:18px;align-items:center" data-open="${e(v.ck)}">
