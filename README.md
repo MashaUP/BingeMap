@@ -54,3 +54,7 @@ I link si aggiornano da `links.json` (aumenta `revision` quando li cambi).
 - Documentazione tecnica in `docs/`.
 
 Attribuzioni: questo prodotto usa l'API TMDB ma non è approvato né certificato da TMDB. Dati sulla disponibilità: JustWatch.
+
+## Licenza
+
+Codice con licenza [MIT](LICENSE) © 2026 MashaUP. I font inclusi (Inter e Sora) hanno la propria licenza SIL Open Font License, in `assets/fonts/`.

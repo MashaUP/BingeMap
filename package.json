@@ -4,7 +4,7 @@
   "private": true,
   "description": "BingeMap: trova le serie del catalogo che non hai ancora visto.",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "test": "node --test \"tests/unit/*.test.js\"",
     "check": "node scripts/check.mjs && eslint .",

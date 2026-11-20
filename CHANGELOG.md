@@ -20,6 +20,7 @@ Audit di stabilità: dettagli in `docs/DEBUG_AUDIT.md`.
 - Impostazioni › Avanzate: filtro delle fette, pagine massime per elenco, modo di lettura delle schede, titoli correlati sì/no.
 - Controllo statico del codice (`npm run lint`, anche nella release automatica) e nuovi test, tra cui il collegamento con un clic vero nel popup.
 - Release automatica come negli altri progetti: alla pubblicazione di una Release su GitHub, `BingeMap-x.y.z.zip` allegato (sostituito se si rilancia) e annuncio su Discord con il link di download (segreto `DISCORD_WEBHOOK_URL`). Il workflow si ferma se il tag non coincide con la versione.
+- Licenza MIT (prima: tutti i diritti riservati) e immagine di anteprima della repository (`docs/social-preview.png`).
 
 ## [1.3.1] - 2026-11-20
 
