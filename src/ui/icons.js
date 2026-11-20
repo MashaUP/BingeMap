@@ -40,6 +40,7 @@ const P = {
   dice: '<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2"/><circle cx="15" cy="15" r="1.2"/><circle cx="15" cy="9" r="1.2"/><circle cx="9" cy="15" r="1.2"/>',
   arrowUp: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   arrowDown: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  power: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
   calendar: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
   map: '<path d="M9 4L3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/>',
   layers: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>',
@@ -55,5 +56,7 @@ export function icon(name, size = 18, cls = '') {
 }
 
 export function logo(size = 36) {
-  return `<svg width="${size}" height="${size}" viewBox="0 0 48 48" role="img" aria-label="BingeMap"><ellipse cx="24" cy="42" rx="12" ry="3.2" fill="none" stroke="#A68CFF" stroke-width="2"/><path d="M24 4C15.7 4 9 10.5 9 18.6 9 28.8 21.6 40 22.6 40.8a2.1 2.1 0 0 0 2.8 0C26.4 40 39 28.8 39 18.6 39 10.5 32.3 4 24 4z" fill="#6D4AFF"/><path d="M20.5 12.5v12.6L31 18.8z" fill="#fff"/></svg>`;
+  // Stesso disegno dell'icona dell'estensione: quadrato arrotondato viola, spina bianca con «play».
+  const id = 'bmg' + size;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 48 48" role="img" aria-label="BingeMap"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8B5CF6"/><stop offset="1" stop-color="#4320C4"/></linearGradient><radialGradient id="${id}t" cx="0.85" cy="0.95" r="0.6"><stop offset="0" stop-color="#2DD4BF" stop-opacity=".55"/><stop offset="1" stop-color="#2DD4BF" stop-opacity="0"/></radialGradient></defs><rect width="48" height="48" rx="11.5" fill="url(#${id})"/><rect width="48" height="48" rx="11.5" fill="url(#${id}t)"/><path d="M24 5.8c-8 0-14.4 6.4-14.4 14.4 0 9.6 11.6 20.4 13.3 21.9a1.6 1.6 0 0 0 2.2 0C26.8 40.6 38.4 29.8 38.4 20.2 38.4 12.2 32 5.8 24 5.8z" fill="#fff"/><path d="M20.6 14.2v12l9.8-6z" fill="#5B34EC"/></svg>`;
 }

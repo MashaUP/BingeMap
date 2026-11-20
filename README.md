@@ -1,6 +1,6 @@
 # BingeMap
 
-Versione: **1.2.0**
+Versione: **1.3.0**
 
 BingeMap trova le serie del catalogo che non hai ancora visto. Incrocia il catalogo con le liste che hai già in altre app (SIMKL, Refract, Trakt, IMDb e altre), toglie in automatico quello che hai completato e ti lascia combinare generi, anni, tag e voti.
 
@@ -8,15 +8,15 @@ Estensione per Chrome, Brave ed Edge, con un'app completa a tutta pagina. Nessun
 
 ## Installazione
 
-1. Scarica `BingeMap-1.2.0.zip` dalla radice del repository ed estrailo.
+1. Scarica `BingeMap-1.3.0.zip` dalla radice del repository ed estrailo.
 2. Apri `brave://extensions` o `chrome://extensions` e attiva la «Modalità sviluppatore».
 3. Premi «Carica estensione non pacchettizzata» e scegli la cartella `BingeMap`.
 
-Per aggiornare: «Cerca aggiornamento» nell'app, poi sostituisci la cartella e premi «Ricarica». I dati restano.
+Per aggiornare: «Cerca aggiornamento» nell'app, scarica lo zip, copia la cartella `BingeMap` nuova al posto della vecchia e premi **«Riavvia BingeMap»** (barra laterale o popup). I dati restano.
 
 ## Primi passi
 
-1. **Catalogo.** Apri Streaming Community, clicca l'icona di BingeMap e scegli «Usa questa scheda». Poi avvia la scansione da Attività. In alternativa o in aggiunta: catalogo legale dei fornitori italiani (Impostazioni › Catalogo, serve la chiave TMDB).
+1. **Catalogo.** Apri Streaming Community, clicca l'icona di BingeMap e scegli «Usa questa scheda»: la lettura di tutto l'archivio parte da sola (elenco in 2–3 minuti, poi le schede di ogni serie con calma). In alternativa o in aggiunta: catalogo legale dei fornitori italiani (Impostazioni › Catalogo, serve la chiave TMDB).
 2. **Liste.** Libreria › Importa: Netflix (cronologia), AniList, MyAnimeList, un articolo incollato, SIMKL (accesso diretto), ZIP di Refract o Trakt, CSV di IMDb, TV Time, Showly, SeriesGuide, Sofa Time, CSV/JSON/Excel con mappatura delle colonne, lista manuale.
 3. **Scopri.** Filtri combinabili, ricerche salvate che si aggiornano, consigli con il loro perché, «Sorprendimi».
 4. **Esplora.** Universi e spin-off, grandi classici, giro del mondo, linea del tempo, persone che segui, anime della stagione.

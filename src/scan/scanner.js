@@ -11,7 +11,7 @@ import * as tmdb from '../metadata/tmdb.js';
 import { runMatching } from '../match/run.js';
 
 const running = new Map(); // jobId -> { stop: bool, pause: bool }
-let hooks = { emit: () => {}, keepAlive: () => () => {}, afterPromote: async () => {}, fetch: (...a) => globalThis.fetch(...a), sleep };
+let hooks = { emit: () => {}, keepAlive: () => () => {}, afterPromote: async () => {}, afterJob: async () => {}, fetch: (...a) => globalThis.fetch(...a), sleep };
 export function setHooks(h) { hooks = { ...hooks, ...h }; }
 
 export const KIND_LABEL = {
@@ -39,6 +39,14 @@ export async function startJob(kind, opts = {}) {
   await saveJob(job);
   run(job).catch(async (e) => { job.status = 'error'; job.error = e.message; note(job, 'Errore: ' + e.message); await saveJob(job); await log('error', 'scan', kind, e.message); });
   return publicJob(job);
+}
+
+// Passo successivo della scansione automatica di tutto l'archivio (elenco → schede → TMDB), oppure null.
+export function nextAutoKind(job, settings) {
+  if (!settings.autoFullScan || !job || job.status !== 'done') return null;
+  if (job.kind === 'sc-list') return 'sc-detail';
+  if (job.kind === 'sc-detail' && settings.tmdbKey) return 'tmdb-enrich';
+  return null;
 }
 
 export async function pauseJob(id) { const r = running.get(id); if (r) r.pause = true; }
@@ -82,6 +90,8 @@ async function run(job) {
     running.delete(job.id);
     release();
   }
+  // Operazione finita (non in pausa): chi l'ha avviata può far partire il passo successivo.
+  if (job.status !== 'paused' && job.status !== 'running') { try { await hooks.afterJob(publicJob(job)); } catch (e) { await log('warn', 'scan', 'afterJob', e.message); } }
 }
 
 async function checkCtl(job, ctl) {

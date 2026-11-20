@@ -32,7 +32,19 @@ scanner.setHooks({
   keepAlive,
   fetch: (...a) => fetch(...a),
   afterPromote: async (snap, job) => { await afterCatalogChange(snap, job); },
+  afterJob: async (job) => { await autoNext(job); },
 });
+
+// Scansione automatica di tutto l'archivio: elenco completo → schede di tutte le serie → metadati TMDB (se c'è la chiave).
+// Ogni passo parte da solo quando il precedente finisce bene; si ferma su blocchi o errori, come sempre.
+export async function autoNext(job) {
+  const next = scanner.nextAutoKind(job, await loadSettings());
+  if (!next) return;
+  setTimeout(async () => {
+    try { await scanner.startJob(next, next === 'sc-detail' ? { auto: true } : {}); broadcast({ kind: 'scan', status: 'running' }); }
+    catch (e) { await log('info', 'scan', 'auto', e.message); }
+  }, 1500);
+}
 
 // Menu del tasto destro e barra degli indirizzi (funzione 11).
 function setupMenus() {
@@ -210,6 +222,8 @@ function invalidate() { viewCache = { at: 0, bySite: null, views: null }; }
 
 const handlers = {
   async 'app.version'() { return VERSION; },
+  // Riavvio dell'estensione: dopo aver sostituito la cartella con la versione nuova, Chrome rilegge i file dal disco.
+  async 'app.reload'() { setTimeout(() => chrome.runtime.reload(), 300); return true; },
   async 'ping'() { return { version: VERSION }; },
   async 'scan.start'({ kind, mode, opts }) { return scanner.startJob(kind, { ...(opts || {}), mode }); },
   async 'scan.pause'({ id }) { await scanner.pauseJob(id); return true; },
@@ -225,11 +239,22 @@ const handlers = {
     const u = new URL(url);
     const origin = u.origin;
     if (!(await chrome.permissions.contains({ origins: [originPattern(origin)] }))) throw new Error('Permesso per il sito non concesso');
-    // Sul sito reale Vue toglie l'attributo data-page dopo l'avvio: in quel caso si rilegge l'HTML grezzo dello stesso indirizzo.
-    const [{ result: html }] = await chrome.scripting.executeScript({ target: { tabId }, func: async () => {
-      if (document.querySelector('[data-page]')) return document.documentElement.outerHTML;
-      try { const r = await fetch(location.href, { credentials: 'include' }); return await r.text(); } catch (e) { return document.documentElement.outerHTML; }
-    } });
+    // Sul sito reale Vue toglie l'attributo data-page dopo l'avvio. Ordine dei tentativi:
+    // 1) i dati della pagina dall'app (mondo della pagina), 2) l'attributo nel DOM, 3) l'HTML grezzo dello stesso indirizzo.
+    let html = null;
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: () => {
+        try { const p = document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$page; return p ? JSON.stringify({ component: p.component, props: { titles: p.props.titles, title: p.props.title, totalCount: p.props.totalCount, sliders: p.props.sliders } }) : null; } catch (e) { return null; }
+      } });
+      if (result) html = `<div id="app" data-page="${result.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></div>`;
+    } catch { /* mondo della pagina non disponibile */ }
+    if (!html || !sc.fingerprint(html).ok) {
+      const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, func: async () => {
+        if (document.querySelector('[data-page]')) return document.documentElement.outerHTML;
+        try { const r = await fetch(location.href, { credentials: 'include' }); return await r.text(); } catch (e) { return document.documentElement.outerHTML; }
+      } });
+      html = result;
+    }
     const fp = sc.fingerprint(html);
     if (!fp.ok) throw new Error(fp.reason + ' Apri la pagina dell\'archivio o della ricerca delle serie e riprova.');
     const seg = u.pathname.split('/').filter(Boolean);
@@ -243,7 +268,13 @@ const handlers = {
     // Raccolta passiva della pagina attuale.
     const parsed = sc.parseList(html);
     if (parsed.titles.length) await harvest(parsed.titles);
-    return { ok: true, origin, lang, found: fp.titles };
+    // Scansione automatica di tutto l'archivio appena collegato.
+    let autoStarted = false;
+    const st = await loadSettings();
+    if (st.autoFullScan && !(await scanner.activeJob?.())) {
+      try { await scanner.startJob('sc-list', { mode: 'full' }); autoStarted = true; broadcast({ kind: 'scan', status: 'running' }); } catch { /* un'altra operazione è in corso */ }
+    }
+    return { ok: true, origin, lang, found: fp.titles, autoStarted, total: parsed.total || null };
   },
 
   // Il content script manda i titoli delle pagine visitate: si aggiungono senza mai segnare spariti.

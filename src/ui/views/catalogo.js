@@ -24,6 +24,7 @@ export async function render(root, { params }, ctx) {
   root.innerHTML = `
     <header class="between"><div><h1>Catalogo</h1><p class="muted" style="margin:4px 0 0" data-sub></p></div>
       <div class="row"><button class="btn" data-save>${icon('bookmark')}Salva ricerca</button><button class="btn" data-export>${icon('download')}Esporta</button></div></header>
+    ${lastSnap && !lastSnap.counts?.total ? `<div class="notice warn">${icon('alert')}<div>Il catalogo è vuoto, quindi la ricerca non trova niente. Apri Streaming Community, clicca l'icona di BingeMap e scegli «Usa questa scheda»: la lettura di tutto l'archivio parte da sola. Lo stato è in <a href="#/attivita">Attività</a>.</div></div>` : ''}
     <div class="row">
       <label class="search" style="flex:1 1 420px">${icon('search')}<input data-search type="search" placeholder="Cerca per titolo, originale o alternativo" aria-label="Cerca nel catalogo"></label>
       <a class="btn" href="#/filtri" data-filters>${icon('filter')}Filtri</a>

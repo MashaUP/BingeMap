@@ -119,12 +119,13 @@ export async function render(root, { args }, ctx) {
     f.innerHTML = `<h2>Notifiche e automatismi</h2>
       <label class="check"><input type="checkbox" name="notifications" ${s.notifications ? 'checked' : ''}> Notifiche (novità nelle collezioni seguite, mancanti ora disponibili, aggiornamenti)</label>
       <label class="check"><input type="checkbox" name="updateCheck" ${s.updateCheck ? 'checked' : ''}> Controlla gli aggiornamenti ogni 12 ore</label>
+      <label class="check"><input type="checkbox" name="autoFullScan" ${s.autoFullScan ? 'checked' : ''}> Lettura automatica di tutto l'archivio: dopo l'elenco legge le schede di tutte le serie, poi TMDB se c'è la chiave</label>
       <label class="field" style="max-width:320px">Scansione programmata<select name="scheduledScan"><option value="off" ${s.scheduledScan === 'off' ? 'selected' : ''}>Mai (solo a mano)</option><option value="daily" ${s.scheduledScan === 'daily' ? 'selected' : ''}>Ogni giorno</option><option value="weekly" ${s.scheduledScan === 'weekly' ? 'selected' : ''}>Ogni settimana</option></select></label>
       <label class="check"><input type="checkbox" name="badgesOnSite" ${s.badgesOnSite ? 'checked' : ''}> Badge sulle copertine del sito</label>
       <label class="check"><input type="checkbox" name="hideCompletedOnSite" ${s.hideCompletedOnSite ? 'checked' : ''}> Attenua sul sito le serie già completate</label>
       <label class="field" style="max-width:320px">Promemoria di backup dopo (giorni)<input type="number" name="backupReminderDays" min="1" value="${s.backupReminderDays}"></label>
       <button class="btn p" style="align-self:flex-start">Salva</button>`;
-    f.addEventListener('submit', async (ev) => { ev.preventDefault(); await save({ notifications: f.notifications.checked, updateCheck: f.updateCheck.checked, scheduledScan: f.scheduledScan.value, badgesOnSite: f.badgesOnSite.checked, hideCompletedOnSite: f.hideCompletedOnSite.checked, backupReminderDays: Number(f.backupReminderDays.value) || 14 }); });
+    f.addEventListener('submit', async (ev) => { ev.preventDefault(); await save({ notifications: f.notifications.checked, updateCheck: f.updateCheck.checked, autoFullScan: f.autoFullScan.checked, scheduledScan: f.scheduledScan.value, badgesOnSite: f.badgesOnSite.checked, hideCompletedOnSite: f.hideCompletedOnSite.checked, backupReminderDays: Number(f.backupReminderDays.value) || 14 }); });
   }
 
   if (sec === 'profili') {

@@ -35,7 +35,7 @@ export function parseNatural(text) {
   if ((m = s.match(/\b(?:max|massimo|al massimo|fino a) (\d+) stagion/))) { all.push({ field: 'seasons', max: Number(m[1]) }); understood.push('stagioni'); }
   if (/\bweekend\b/.test(s)) { all.push({ field: 'hours', max: 10 }); understood.push('weekend'); }
   if (/\bsub ?ita\b|\bsottotitolat/.test(s)) { all.push({ field: 'subIta', eq: true }); understood.push('Sub-ITA'); }
-  if (/\bdoppiat/.test(s)) { all.push({ field: 'subIta', eq: false }); understood.push('doppiate'); }
+  if (/\bdoppiat/.test(s)) { all.push({ field: 'dubIta', eq: true }); understood.push('doppiate'); }
   if (/\bnuove\b|\baggiunte di recente\b/.test(s)) { all.push({ field: 'added', withinDays: 14 }); understood.push('nuove'); }
   const countries = Object.entries(COUNTRY).filter(([w]) => new RegExp(`\\b${w}\\b`).test(s)).map(([, c]) => c);
   if (countries.length) { all.push({ field: 'country', any: [...new Set(countries)] }); understood.push('paese'); }

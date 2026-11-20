@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0] - 2026-11-20
+
+### Novità
+- **Riavvia BingeMap**: pulsante nella barra laterale, nel popup e nella finestra «Cerca aggiornamento». Dopo aver copiato la cartella della versione nuova basta premerlo: l'estensione rilegge i file dal disco. Se BingeMap si accorge che la cartella è nuova ma il motore è ancora quello vecchio, lo dice da solo.
+- **Lettura automatica di tutto l'archivio**: con «Usa questa scheda» parte subito l'elenco completo, poi le schede di tutte le serie (con calma, riprende anche dopo la chiusura del browser), poi i metadati TMDB se c'è la chiave. Disattivabile in Impostazioni.
+- **Icona nuova**: quadrato pieno con la spina e il «play», leggibile anche a 16 px nella barra del browser; stesso disegno nel logo dell'app.
+
+### Correzioni
+- Collegamento del sito: i dati vengono letti direttamente dall'app della pagina, poi dall'HTML come prima. Prima della 1.3.0 l'errore «La pagina non contiene i dati attesi» compariva quando il motore in esecuzione era ancora quello della versione precedente.
+- Ricerca in Scopri: se il testo è il titolo di una serie si cerca quella, invece di interpretarlo come filtri; con il catalogo vuoto spiega cosa fare.
+- «Doppiate» nella ricerca a parole usa il dato del doppiaggio italiano.
+
 ## [1.2.0] - 2026-11-20
 
 ### Novità

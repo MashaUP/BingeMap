@@ -138,14 +138,27 @@ def main():
             check("collegamento del sito dalla scheda", r and r.get("ok"), str(r))
             check("raccolta passiva della pagina", r and r.get("found") == 60, str(r))
 
-            r = send({"type": "scan.start", "kind": "sc-list", "mode": "full"})
-            job = None
-            for _ in range(200):
+            check("collegamento: lettura di tutto l'archivio partita da sola", r and r.get("autoStarted"), str(r))
+            if not (r and r.get("autoStarted")):
+                send({"type": "scan.start", "kind": "sc-list", "mode": "full"})
+            job = None; chained = None
+            for _ in range(240):
                 job = send({"type": "scan.active"})
-                if not job:
+                if job and job.get("kind") == "sc-detail":
+                    chained = job
+                    break
+                if not job and any(j["kind"] == "sc-list" and j["status"] != "running" for j in db_jobs(app)):
+                    time.sleep(2.5)
+                    job = send({"type": "scan.active"})
+                    chained = job if job and job.get("kind") == "sc-detail" else None
                     break
                 time.sleep(0.5)
-            last = sorted(db_jobs(app), key=lambda j: j["startedAt"])[-1]
+            check("dopo l'elenco partono da sole le schede di tutte le serie", bool(chained), str(job))
+            if chained:
+                send({"type": "scan.stop", "id": chained["id"]})
+                time.sleep(1.5)
+            app.evaluate("() => import('/src/common/settings.js').then(m => m.saveSettings({ autoFullScan: false }))")
+            last = sorted([j for j in db_jobs(app) if j["kind"] == "sc-list"], key=lambda j: j["startedAt"])[-1]
             check("scansione completa", last["status"] == "done" and last["complete"], f"{last['status']} {last.get('error')} trovate={last.get('titlesFound')}")
             check("130 serie, film esclusi", last.get("titlesFound") == 130, str(last.get("titlesFound")))
             check("strategia: elenco JSON paginato con intestazioni XHR", last.get("strategy") == "api", str(last.get("strategy")))
@@ -504,6 +517,25 @@ def main():
                 time.sleep(0.5)
             check("ripresa dopo la chiusura del browser: scansione completa", job2 and job2["status"] == "done" and job2["complete"] and job2.get("titlesFound") == 130,
                   f"{job2 and job2['status']} trovate={job2 and job2.get('titlesFound')}")
+
+            # Riavvia BingeMap (dopo aver copiato la cartella nuova). Nel browser vero l'estensione si ricarica dai file;
+            # in Chrome automatizzato un'estensione caricata da riga di comando si scarica ma non torna, quindi qui si
+            # verifica che i pulsanti ci siano e che il riavvio venga davvero eseguito (l'estensione viene scaricata).
+            pop2 = ctx.new_page()
+            pop2.goto(f"chrome-extension://{ext_id}/src/ui/popup.html")
+            pop2.wait_for_selector("[data-restart]", timeout=10000)
+            check("popup: pulsante Riavvia BingeMap", True)
+            pop2.close()
+            pg.goto(base + "#/scopri"); pg.wait_for_selector("[data-act=restart]", timeout=10000)
+            check("barra laterale: pulsante Riavvia BingeMap", True)
+            pg.click("[data-act=restart]")
+            time.sleep(3)
+            probe = ctx.new_page(); unloaded = False
+            try:
+                probe.goto(base + "#/scopri", timeout=5000)
+            except Exception as ex:
+                unloaded = "ERR_BLOCKED_BY_CLIENT" in str(ex)
+            check("Riavvia: l'estensione viene ricaricata", unloaded)
             ctx.close()
     finally:
         server.terminate()

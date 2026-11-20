@@ -85,11 +85,15 @@ export async function render(root, _p, ctx) {
     <span class="row muted" style="gap:8px">${icon('clock', 16)}${backupAge ? `Ultimo backup o sincronizzazione: ${daysBetween(backupAge)} giorni fa` : 'Nessun backup ancora'} · <a href="#/attivita">Backup</a></span>
   </footer>`;
 
-  root.querySelector('[data-nlp]').addEventListener('submit', (ev) => {
+  root.querySelector('[data-nlp]').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const q = ev.target.q.value.trim();
     if (!q) return;
+    // Prima i titoli: se il testo è il nome di una serie («Fantasy Island», «Dark») si cerca quella, non i filtri.
+    const byTitle = await ctx.store.query({ ast: { all: [{ field: 'text', q }] }, limit: 1, showHidden: true });
     const { query, understood } = parseNatural(q);
+    if (byTitle.total && (!understood.length || byTitle.total <= 30)) { ctx.toast(`Titoli che contengono «${q}»`, 'ok'); nav('catalogo?q=' + encodeObj({ all: [{ field: 'text', q }] })); return; }
+    if (!counts.total) { ctx.toast('Il catalogo è vuoto: collega il sito dal popup di BingeMap e la scansione parte da sola', 'err'); return; }
     if (!query.all.length) { query.all.push({ field: 'text', q }); }
     ctx.toast(understood.length ? `Capito: ${understood.join(', ')}` : 'Cerco il testo nei titoli', 'ok');
     nav('catalogo?q=' + encodeObj(query));
@@ -118,6 +122,6 @@ export async function surpriseDialog(ctx, ast) {
 
 function emptyState() {
   return `<section class="hero"><div class="col" style="gap:10px;flex:1 1 400px"><div class="lbl">Benvenuto</div><h1 class="big">Il catalogo è vuoto</h1>
-    <p class="muted" style="margin:0">Collega il catalogo (Streaming Community dalla scheda aperta, oppure il catalogo legale dei fornitori italiani), poi importa le tue liste.</p></div>
+    <p class="muted" style="margin:0">Apri Streaming Community, clicca l'icona di BingeMap e scegli «Usa questa scheda»: BingeMap legge da solo tutto l'archivio delle serie (prima l'elenco, poi le schede). In alternativa, il catalogo legale dei fornitori italiani. Poi importa le tue liste.</p></div>
     <div class="col" style="flex:0 1 280px"><a class="btn p lg" href="#/benvenuto">${icon('compass')}Inizia</a><a class="btn" href="#/import">${icon('upload')}Importa liste</a></div></section>`;
 }

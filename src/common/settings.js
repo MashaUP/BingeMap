@@ -43,6 +43,7 @@ export const DEFAULTS = {
   contrast: 'normal', // normal | high
   textScale: 100, // 100 | 115 | 130
   anilistUser: '',
+  autoFullScan: true, // dopo il collegamento: elenco completo, poi le schede di tutte le serie, poi TMDB
   settingsRev: 2,
 };
 

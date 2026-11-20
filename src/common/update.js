@@ -40,10 +40,27 @@ export async function shouldNotify(latest) {
 
 export const UPDATE_STEPS = [
   'Scarica lo zip della nuova versione.',
-  'Estrai la cartella BingeMap al posto di quella vecchia (stessa posizione).',
-  'Apri brave://extensions o chrome://extensions e premi «Ricarica» su BingeMap.',
-  'Ricarica le schede di BingeMap aperte. I tuoi dati restano dove sono.',
+  'Estrai la cartella BingeMap e copiala al posto di quella vecchia (stessa posizione, sovrascrivi tutto).',
+  'Torna qui e premi «Riavvia BingeMap»: l\'estensione rilegge i file nuovi. I tuoi dati restano dove sono.',
 ];
+
+// Confronto tra la versione dei file sul disco (questa pagina) e quella del motore in esecuzione (service worker).
+//  - 'restart': hai copiato una cartella nuova ma il motore è ancora quello vecchio → serve «Riavvia BingeMap»;
+//  - 'reload': il motore è più nuovo della pagina aperta → basta ricaricare la pagina;
+//  - null: tutto allineato.
+export function staleKind(pageVersion, workerVersion) {
+  if (workerVersion === 'old') return 'restart'; // il motore non conosce nemmeno la domanda: è precedente alla 1.1.0
+  if (!workerVersion || !pageVersion) return null;
+  const c = compareVersions(pageVersion, workerVersion);
+  return c > 0 ? 'restart' : c < 0 ? 'reload' : null;
+}
+
+// Riavvia l'estensione (rilegge manifest e file dal disco). Funziona anche se il motore in esecuzione è vecchio.
+export function restartExtension() {
+  const c = globalThis.chrome;
+  if (c?.runtime?.reload) { c.runtime.reload(); return true; }
+  return false;
+}
 
 // Pagina aperta con il codice di prima di un aggiornamento: la versione del service worker è diversa da quella della pagina.
 export function needsReload(pageVersion, workerVersion) {

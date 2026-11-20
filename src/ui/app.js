@@ -10,7 +10,7 @@ import { onEvent, isExtension, send, openUrl } from '../platform/platform.js';
 import { setNextUp } from '../library/data.js';
 import { log } from '../common/diag.js';
 import { undo, canUndo } from '../library/undo.js';
-import { needsReload } from '../common/update.js';
+import { staleKind, restartExtension } from '../common/update.js';
 import { t, translateTree, setLang } from './i18n.js';
 
 const ROUTES = {
@@ -82,7 +82,7 @@ function sidebar(active) {
     <nav class="nav" aria-label="Menu principale">${items}</nav>
     <div class="side-foot">
       <button class="btn sm" type="button" data-act="palette">${icon('command', 16)}Comandi <kbd>Ctrl K</kbd></button>
-      <button class="btn sm" type="button" data-act="update">${icon('refresh', 16)}Cerca aggiornamento</button>
+      <div class="row" style="gap:8px;flex-wrap:nowrap"><button class="btn sm" style="flex:1" type="button" data-act="update">${icon('refresh', 16)}Cerca aggiornamento</button>${isExtension ? `<button class="btn sm" type="button" data-act="restart" title="Riavvia BingeMap: dopo aver copiato la cartella della versione nuova" aria-label="Riavvia BingeMap">${icon('power', 16)}</button>` : ''}</div>
       <div class="row" style="gap:8px"><a class="btn sm" style="flex:1" href="${e(L.kofi)}" target="_blank" rel="noopener">${icon('heart', 16)}Ko-fi</a><a class="btn sm" style="flex:1" href="${e(L.discord)}" target="_blank" rel="noopener">${icon('chat', 16)}Discord</a></div>
       <div class="muted small" style="padding:0 4px">v${VERSION} · profilo «${e(store.getProfileName())}» · dati solo su questo dispositivo${isExtension ? '' : ' (app web)'}</div>
     </div>`;
@@ -130,16 +130,21 @@ export async function doUndo() {
   route();
 }
 
-// Codice vecchio dopo un aggiornamento dell'estensione: si chiede di ricaricare la scheda.
+// Dopo aver copiato la cartella della versione nuova: il motore in esecuzione è ancora quello vecchio finché non si riavvia.
 async function checkStale() {
   if (!isExtension || document.querySelector('[data-stale]')) return;
-  const w = await send('app.version').catch(() => null);
-  if (!needsReload(VERSION, w)) return;
+  const w = await send('app.version').catch(() => 'old');
+  const kind = staleKind(VERSION, w);
+  if (!kind) return;
   const bar = document.createElement('div');
-  bar.className = 'notice warn'; bar.dataset.stale = '1';
-  bar.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);top:12px;z-index:60;max-width:560px';
-  bar.innerHTML = `<div>BingeMap è stato aggiornato alla ${w}: ricarica la pagina per usare la nuova versione.</div>`;
-  const b = document.createElement('button'); b.className = 'btn sm p'; b.textContent = 'Ricarica'; b.addEventListener('click', () => location.reload());
+  bar.className = 'notice warn'; bar.dataset.stale = kind;
+  bar.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);top:12px;z-index:60;max-width:620px;box-shadow:0 10px 30px rgba(0,0,0,.4)';
+  bar.innerHTML = kind === 'restart'
+    ? `<div>Hai copiato la versione <b>${VERSION}</b>: premi «Riavvia BingeMap» per completare l'aggiornamento.</div>`
+    : `<div>BingeMap è stato aggiornato alla ${w}: ricarica la pagina per usare la nuova versione.</div>`;
+  const b = document.createElement('button'); b.className = 'btn sm p'; b.dataset.restart = '1';
+  b.textContent = kind === 'restart' ? 'Riavvia BingeMap' : 'Ricarica';
+  b.addEventListener('click', () => (kind === 'restart' ? restartExtension() : location.reload()));
   bar.appendChild(b); document.body.appendChild(bar);
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkStale(); });
@@ -159,6 +164,7 @@ document.addEventListener('click', async (ev) => {
   }
   if (t.dataset.act === 'palette') return palette();
   if (t.dataset.act === 'update') return updateDialog();
+  if (t.dataset.act === 'restart') { toast('Riavvio BingeMap…', ''); setTimeout(() => restartExtension(), 300); return; }
   if (t.dataset.open && !ev.target.closest('button, a')) nav('serie/' + encodeURIComponent(t.dataset.open));
 });
 document.addEventListener('keydown', (ev) => {
@@ -176,9 +182,14 @@ async function updateDialog() {
   const m = modal(`<h2>Cerca aggiornamento</h2><div class="muted">Controllo in corso…</div>`);
   const [u] = await Promise.all([checkUpdate(), refreshLinks(true).then((l) => { ui.links = l; })]);
   if (u.error) { m.el.innerHTML = `<h2>Cerca aggiornamento</h2><div class="notice err">${icon('alert')}<div>${e(u.error)}</div></div><div class="row" style="justify-content:flex-end"><button class="btn" data-close>Chiudi</button></div>`; return; }
-  if (!u.available) { m.el.innerHTML = `<h2>Sei aggiornato</h2><p class="muted">Hai la versione ${e(u.current)}, l'ultima disponibile. Link Ko-fi e Discord ricaricati.</p><div class="row" style="justify-content:flex-end"><button class="btn p" data-close>OK</button></div>`; return; }
+  if (!u.available) {
+    m.el.innerHTML = `<h2>Sei aggiornato</h2><p class="muted">Hai la versione ${e(u.current)}, l'ultima disponibile. Link Ko-fi e Discord ricaricati.</p><p class="muted small">Hai appena copiato una cartella nuova? Premi «Riavvia BingeMap» per farla leggere.</p><div class="row" style="justify-content:flex-end">${isExtension ? `<button class="btn" data-restart>${icon('refresh', 16)}Riavvia BingeMap</button>` : ''}<button class="btn p" data-close>OK</button></div>`;
+    m.el.querySelector('[data-restart]')?.addEventListener('click', () => restartExtension());
+    return;
+  }
   m.el.innerHTML = `<h2>Nuova versione ${e(u.latest)}</h2><p>${e(u.notes)}</p><ol>${UPDATE_STEPS.map((s) => `<li>${e(s)}</li>`).join('')}</ol>
-    <div class="row" style="justify-content:flex-end"><button class="btn" data-close>Più tardi</button><a class="btn p" href="${e(u.zipUrl)}" target="_blank" rel="noopener">${icon('download', 16)}Scarica e installa</a></div>`;
+    <div class="row" style="justify-content:flex-end"><button class="btn" data-close>Più tardi</button><a class="btn p" href="${e(u.zipUrl)}" target="_blank" rel="noopener">${icon('download', 16)}Scarica lo zip</a>${isExtension ? `<button class="btn p" data-restart>${icon('refresh', 16)}Riavvia BingeMap</button>` : ''}</div>`;
+  m.el.querySelector('[data-restart]')?.addEventListener('click', () => restartExtension());
 }
 
 // --- Palette dei comandi (idea 19)
@@ -188,7 +199,7 @@ const COMMANDS = [
   ['Statistiche', 'statistiche'], ['Attività e backup', 'attivita'], ['Impostazioni', 'impostazioni'], ['Serata in due', 'coppia'],
   ['Mappa delle serie', 'mappa'], ['In arrivo (calendario)', 'calendario'], ['Scorri (smista in fretta)', 'scorri'], ['Ho 40 minuti', 'stasera?min=40'],
   ['Pianifica la maratona', 'maratona'], ['Il tuo anno in serie (Wrapped)', 'wrapped'], ['Incolla una lista', 'import/paste'], ['Importa da Netflix', 'import/netflix'],
-  ['Annulla l\'ultima modifica', '__undo'], ['Esplora', 'esplora'], ['Universi e spin-off', 'universi'], ['I grandi classici', 'classici'],
+  ['Annulla l\'ultima modifica', '__undo'], ['Riavvia BingeMap (dopo aver copiato la cartella nuova)', '__restart'], ['Esplora', 'esplora'], ['Universi e spin-off', 'universi'], ['I grandi classici', 'classici'],
   ['La tua linea del tempo', 'cronologia'], ['Persone che segui', 'persone'], ['Il giro del mondo in serie', 'mondo'], ['Anime della stagione', 'anime'],
   ['Quasi finite', 'preset/p-almost'], ['Prova il pilota', 'preset/p-pilot'], ['Cancellate senza finale', 'preset/p-open'], ['Stagioni mancanti nel catalogo', 'preset/p-missing-seasons'],
   ['Importa da AniList', 'import/anilist'], ['Importa da MyAnimeList', 'import/mal'], ['Esporta verso altre app', 'attivita'],
@@ -201,7 +212,7 @@ async function palette() {
   const draw = () => { list.innerHTML = opts.map((o, i) => `<div class="opt" role="option" aria-selected="${i === sel}" data-i="${i}">${icon(o.icon)}<span>${e(o.label)}</span><span class="muted small" style="margin-left:auto">${e(o.hint || '')}</span></div>`).join('') || '<div class="muted" style="padding:10px">Nessun risultato</div>'; };
   const update = async () => {
     const q = inp.value.trim().toLowerCase();
-    const cmds = COMMANDS.filter(([l]) => !q || l.toLowerCase().includes(q) || t(l).toLowerCase().includes(q)).map(([label, path]) => ({ label: t(label), icon: 'command', hint: t('comando'), go: () => (path === '__undo' ? doUndo() : nav(path)) }));
+    const cmds = COMMANDS.filter(([l]) => !q || l.toLowerCase().includes(q) || t(l).toLowerCase().includes(q)).map(([label, path]) => ({ label: t(label), icon: 'command', hint: t('comando'), go: () => (path === '__undo' ? doUndo() : path === '__restart' ? restartExtension() : nav(path)) }));
     let titles = [];
     if (q.length >= 2) {
       const r = await store.query({ ast: { all: [{ field: 'text', q }] }, sort: 'score', limit: 8 });
@@ -225,6 +236,7 @@ async function boot() {
   document.documentElement.dataset.theme = st.theme === 'light' ? 'light' : 'dark';
   setLang(st.lang);
   applyLook(st);
+  setTimeout(checkStale, 800);
   ui.links = await getLinks();
   refreshLinks().then((l) => { ui.links = l; });
   await store.init();

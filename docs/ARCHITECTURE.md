@@ -48,4 +48,11 @@ Tre strati mai mescolati: catalogo (`catalog_*`, `scan_*`, `tmdb_cache`), librer
 
 ## Test
 
-`npm test` (72 test di unità, fake-indexeddb) e `npm run e2e` (90 controlli in Chrome con l'estensione estratta dallo zip del pacchetto, sito simulato con la struttura reale, axe-core, confronto con le immagini in `tests/e2e/baseline/`, ripresa della scansione dopo la chiusura del browser).
+`npm test` (75 test di unità, fake-indexeddb) e `npm run e2e` (95 controlli in Chrome con l'estensione estratta dallo zip del pacchetto, sito simulato con la struttura reale, axe-core, confronto con le immagini in `tests/e2e/baseline/`, ripresa della scansione dopo la chiusura del browser).
+
+## Aggiunte della 1.3.0
+
+- Riavvio: `restartExtension()` (`chrome.runtime.reload()`) dalla pagina, dal popup o dalla palette; `staleKind()` confronta la versione dei file con quella del service worker in esecuzione e mostra l'avviso. Un motore precedente alla 1.1.0 non risponde a `app.version` e viene trattato come vecchio.
+- Lettura automatica: alla fine di ogni operazione lo scanner chiama `afterJob`; `nextAutoKind()` decide il passo successivo (elenco → schede → TMDB).
+- Collegamento: prima i dati della pagina letti nel mondo della pagina (`executeScript` con `world: 'MAIN'`), poi l'HTML.
+- Nota sui test: in Chrome automatizzato un'estensione caricata da riga di comando, dopo `runtime.reload()`, viene scaricata ma non ricaricata; il test verifica che il riavvio venga eseguito.

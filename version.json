@@ -1,6 +1,6 @@
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "date": "2026-11-20",
-  "zip": "BingeMap-1.2.0.zip",
-  "notes": "Esplora: universi e spin-off, grandi classici, giro del mondo, linea del tempo, persone che segui, anime della stagione. Avvisi: cancellate senza finale, stagioni mancanti nel catalogo, quasi finite, prova il pilota. Import AniList e MyAnimeList. Esporta verso altre app (IMDb, CSV completo, MyAnimeList). Alto contrasto e testo più grande."
+  "zip": "BingeMap-1.3.0.zip",
+  "notes": "Pulsante «Riavvia BingeMap» dopo aver copiato la cartella nuova (con avviso automatico). Collegando il sito parte da sola la lettura di tutto l'archivio: elenco, poi schede di ogni serie, poi TMDB. Collegamento più robusto sul sito reale. Ricerca: prima i titoli. Icona nuova, più grande e leggibile."
 }
